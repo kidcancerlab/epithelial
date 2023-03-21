@@ -184,4 +184,4 @@ f420.mac.subset<-subset(f420.macs, idents = c("7", "9"), invert=T)
 ###mac markers based on 35690521 LA-TAM, ANGIO-TAM, IFN-TAM, INFLAM-TAM, PROLIF-TAM, Classical monocyte, nonclassical
 TAM.markers<-c("Spp1", "Vegfa", "Fabp5", "Gpnmb", "Lgals3","Apoe","Pf4", "Mrc1", "Cd206","Arg1", "Cxcl1", "Cxcl2", "Cxcl3", "Il1a", "Il1b", "Inhba", "Ccl20", "Cxcl9", "Cxcl10", "Ifit1", "Ifitm1", "Tnfsf10", "Fn1", "Hmox1", "C1qa", "C1qb","Mki67","Ace", "Itgal", "Ear2", "Spn", "Itgam", "Itgax", "Cd14", "Fcgr3", "Fcgr1", "Cd68","Cd74", "Cd80", "Cd86", "Ccr2", "Cx3cr1", "Ly6c1", "Ly6c2", "H2-Ab1", "H2-DMb1")
 ###cluster annotation based on PMID: 35690521
-
+dafdsfafs
