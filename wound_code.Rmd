@@ -1,72 +1,270 @@
-library(cowplot) 
+--
+title: "Data Analysis for Fibrosis paper"
+author: "James Reineke and Matt Cannon"
+date: "`r format(Sys.time(), '%m/%d/%Y')`"
+output:
+    html_document:
+        toc: true
+        toc_float: true
+        toc_depth: 5
+        number_sections: false
+        code_folding: hide
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+    tidy = TRUE,
+    echo = TRUE,
+    cache = TRUE,
+    collapse = TRUE,
+    tidy.opts = list(width.cutoff = 95),
+    cache.lazy = FALSE
+)
+```
+
+# Load packages
+```{r lib}
+library(cowplot)
 library(cluster)
-library(dplyr)
-library(ggplot2)
+library(tidyverse)
 library(ggrepel)
-library(patchwork) 
+library(patchwork)
 library(reticulate)
 library(Seurat)
 library(sctransform)
- 
-###load raw
-setwd("/Applications/scRNA_seq raw files/sc k7m2 f420/S0066-B6-Ctl-lung/filtered_feature_bc_matrix")
-raw.B6=Read10X("/Applications/scRNA_seq raw files/sc k7m2 f420/S0066-B6-Ctl-lung/filtered_feature_bc_matrix")
-setwd("/Applications/scRNA_seq raw files/sc k7m2 f420/S0068-F420-Epcam-enriched-mets use this/filtered_feature_bc_matrix")
-raw.F420=Read10X("/Applications/scRNA_seq raw files/sc k7m2 f420/S0068-F420-Epcam-enriched-mets use this/filtered_feature_bc_matrix")
-setwd("/Applications/scRNA_seq raw files/sc k7m2 f420/S0074-Balb-C-Ctl-lung/filtered_feature_bc_matrix")
-raw.balbc=Read10X("/Applications/scRNA_seq raw files/sc k7m2 f420/S0074-Balb-C-Ctl-lung/filtered_feature_bc_matrix")
-setwd("/Applications/scRNA_seq raw files/sc k7m2 f420/S0075-Balb-C-K7M2-Epcam-enriched/filtered_feature_bc_matrix")
-raw.k7m2=Read10X("/Applications/scRNA_seq raw files/sc k7m2 f420/S0075-Balb-C-K7M2-Epcam-enriched/filtered_feature_bc_matrix")
-C57BL6<-CreateSeuratObject(counts = raw.B6, min.cells = 3, min.features =200 )
-C57BL6$sample <- "C57BL6"
-C57BL6[["percent.mt"]] <- PercentageFeatureSet(C57BL6, pattern = "^mt-")
-F420<-CreateSeuratObject(counts = raw.F420, min.cells = 3, min.features =200 )
-F420$sample <- "F420"
-F420[["percent.mt"]] <- PercentageFeatureSet(F420, pattern = "^mt-")
-###merge control and met datasets 
-B6.f420.combined=merge(C57BL6, y=F420, add.cell.ids = c("C57BL6","F420"))
-###scTransform merged data sets to include all genes in scaled data 
-B6.f420.combined<- SCTransform(B6.f420.combined, vars.to.regress = "percent.mt", verbose = FALSE, return.only.var.genes = FALSE)
-###dim reduction
-B6.f420.combined <- RunPCA(B6.f420.combined, verbose = FALSE)
-B6.f420.combined <- RunUMAP(B6.f420.combined, dims = 1:30, verbose = FALSE)
-###cluster low resolution "birds eye view" of lung microenvironment
-B6.f420.combined<- FindNeighbors(B6.f420.combined, dims = 1:30, verbose = FALSE)
-B6.f420.combined<- FindClusters(B6.f420.combined,resolution=0.2, verbose = FALSE)
-###initial DimPlot
-DimPlot(B6.f420.combined, label = TRUE, split.by = "sample", pt.size = 1,cols = scales::alpha(plot_cols, 0.6)) +coord_fixed()+theme(axis.text =element_text(size = 5), axis.title =element_text(size = 8), plot.title = element_text(size=10, face = "bold", hjust = 0.5), strip.text = element_text(size=8, face = "bold"), plot.subtitle = element_text(size=8, hjust = 0.5),legend.text = element_text(size = 5), legend.title = element_text(size = 6, face = "bold"), strip.background =element_blank())
-###Marker genes for each cluster 
-initial.markers <- FindAllMarkers(B6.f420.combined, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.5)
-###Remove cycling and dead cells clusters 3 and 13 noted by high expression of mitochondrial and cell cycling genes respectively
-B6.f420.combined.subset<-subset(B6.f420.combined, idents = c("3", "13"), invert=T)
-###Cluster assignments based on canonical markers and marker genes. merge clustes 
-B6.f420.combined.subset<-RenameIdents(B6.f420.combined.subset, `0`="Macrophage", `1`="Alveolar macrophage",`2`="Endothelial cell",`4`="T cell", `5`="Dendritic cell", `6`="Proximal airway cell", `7`="Distal airway cell", `8`="Fibroblast", `9`="B cell", `10`="Endothelial cell", `11`="Dendritic cell", `12`="Granulocyte",  `14`=" F420", `15`="Erythrocyte", `16`="Smooth muscle cell", `17`="Adipocyte", `18`="Mesothelial cell")
-###add cluster identity to metadata
-B6.f420.combined.subset$celltype.sample <- paste(Idents(B6.f420.combined.subset), B6.f420.combined.subset$sample, sep = "_") 
-B6.f420.combined.subset$celltype <- Idents(B6.f420.combined.subset)
-###markers for plotting 
-B6.F420.combined.plotmarkers<-c("Itgam", "Fcgr1", "Cd68", "Adgre1", "Ccr2", "Cx3cr1", "Ly6c2",  "Itgax", "Mertk", "Marco","Siglecf","Egr2", "Bhlhe41", "Fabp1", "Olr1", "Alox5" ,  "Vwf","Tek","Acer2", "Cavin3","Pecam1",  "Emcn", "Lyve1", "Ptprb","Plvap" ,"Cd3d", "Cd4", "Cd8b1", "Tcf7","Il7r", "Lef1","Dusp10", "Itk","Cd207", "Cd209a", "Ccr7", "Ccl17", "Ccl22", "Wdfy4", "Clec4b1", "H2-DMb1", "Etv3", "Itgae", "Xcr1","Epcam", "Scgb1a1", "Tuba1a","Foxj1", "Sftpd","Lamp3", "Etv5", "Ager", "Aqp5", "Col1a2", "Col3a1", "Col1a1", "Loxl1", "Pdgfra","Pdgfrb", "Fn1", "Ltbp4", "Bgn", "Cd19", "Cd79a", "Cd79b", "Iglc2", "Ighm", "Pax5" , "Cd33", "Csf3r","S100a9", "Cxcr2","Mxd1","Ptafr" , "Steap1","Crabp2","Wisp1","Dclk1", "Twist1","Il1rl1","Ctgf","Hbb-bs", "Hba-a1","Myh11","Cox4i2", "Pde5a", "Cfd", "Car3", "Adipoq","Msln")
-###Addmodules GSEA with msigdbr
+library(rrrSingleCellUtils)
 library(msigdbr)
-all_gene_sets = msigdbr(species = "Mus musculus")
-Inflammation_list<-filter(all_gene_sets, gs_name=="HALLMARK_INFLAMMATORY_RESPONSE")
-Inflammation_list<-list(c(Inflammation_list$gene_symbol))
-B6.f420.combined.subset<-AddModuleScore(B6.f420.combined.subset, features =Inflammation_list, name = 'Inflammation_features')
-Lung_fibrosis_list<-filter(all_gene_sets, gs_name=="WP_LUNG_FIBROSIS")
-Lung_fibrosis_list<-list(c(Lung_fibrosis_list$gene_symbol))
-B6.f420.combined.subset<-AddModuleScore(B6.f420.combined.subset, features =Lung_fibrosis_list, name = 'Lung_fibrosis_features')
-TNFA_list<-filter(all_gene_sets, gs_name=="HALLMARK_TNFA_SIGNALING_VIA_NFKB")
-TNFA_list<-list(c(TNFA_list$gene_symbol))
-B6.f420.combined.subset<-AddModuleScore(B6.f420.combined.subset, features =TNFA_list, name = 'TNFA_features')
-ECM_degrad_list<-filter(all_gene_sets, gs_name=="REACTOME_DEGRADATION_OF_THE_EXTRACELLULAR_MATRIX")
-ECM_degrad_list<-list(c(ECM_degrad_list$gene_symbol))
-B6.f420.combined.subset<-AddModuleScore(B6.f420.combined.subset, features =ECM_degrad_list, name = 'ECM_degrad_features')
-ECM_org_list<-filter(all_gene_sets, gs_name=="REACTOME_EXTRACELLULAR_MATRIX_ORGANIZATION")
-ECM_org_list<-list(c(ECM_org_list$gene_symbol))
-B6.f420.combined.subset<-AddModuleScore(B6.f420.combined.subset, features =ECM_org_list, name = 'ECM_org_features')
-Wound_response_list<-filter(all_gene_sets, gs_name=="GOBP_RESPONSE_TO_WOUNDING")
-Wound_response_list<-list(c(Wound_response_list$gene_symbol))
-B6.f420.combined.subset<-AddModuleScore(B6.f420.combined.subset, features =Wound_response_list, name = 'Wound_response_features')
+# Set random generator seed to facilitate reproducibility
+set.seed(888)
+```
+
+## Make up directory structure
+```{bash mkdirs, eval=TRUE}
+for directoryName in \
+  output \
+  output/figures \
+  output/rdata \
+  output/de
+do
+  if [ ! -d ${directoryName} ]
+  then
+    mkdir -p ${directoryName}
+  fi
+done
+```
+ 
+# Load raw data
+```{r load_raw, eval=TRUE}
+sample_list <- read_tsv("misc/sample_cutoffs.txt", show_col_types = FALSE)
+
+sobj_list <- list()
+
+end_path <- "/filtered_feature_bc_matrix"
+if (grepl("r1pl", Sys.info()[["nodename"]])) {
+    data_path <- "/home/gdrobertslab/lab/Counts/"
+    path_use <- "cluster_path"
+} else {
+    data_path <- "/Applications/scRNA_seq raw files/"
+    path_use <- "James_path"
+}
+
+for (i in seq_len(nrow(sample_list))) {
+    obj_name <- sample_list$obj_name[i]
+
+    sobj_list[[obj_name]] <-
+        tenx_load_qc(paste0(data_path,
+                            sample_list[[path_use]][i],
+                            end_path),
+                     min_cells = 3,
+                     min_features = 200,
+                     violin_plot = FALSE)
+
+    # Add metadata to dataset
+    for (colname in colnames(sample_list)) {
+        sobj_list[[obj_name]][[colname]] <- sample_list[[colname]][i]
+    }
+
+    # Add sample name to dataset
+    sobj_list[[obj_name]]$sample <- obj_name
+
+    cutoff_table <-
+        tribble(~"feature",   ~"min_val",                    ~"max_val",
+                "nCount_RNA", sample_list$ncount_rna_min[i], sample_list$ncount_rna_max[i],
+                "percent.mt", 0,                             sample_list$mt_max[i])
+
+    plotted <-
+        feature_hist(sobj_list[[obj_name]],
+                     features = c("nCount_RNA", "percent.mt"),
+                     cutoff_table = cutoff_table)
+
+    ggsave(paste0("output/figures/feature_hist_",
+                  obj_name,
+                  ".png"),
+           width = 10,
+           height = 10,
+           plot = plotted)
+
+    sobj_list[[obj_name]] <-
+        sobj_list[[obj_name]] %>%
+        subset(nCount_RNA   >= sample_list$ncount_rna_min[i] &
+               nCount_RNA   <= sample_list$ncount_rna_max[i] &
+               percent.mt   <= sample_list$mt_max[i]) %>%
+        process_seurat()
+
+}
+save(sobj_list,
+     file = "output/rdata/sobj_list.rds")
+```
+
+
+## Combine B6 and F420
+```{r b6_f420, dependson='load_raw', eval=TRUE}
+###scTransform merged data sets to include all genes in scaled data 
+B6.f420.combined <-
+    merge(sobj_list[["C57BL6"]],
+          y = sobj_list[["F420"]],
+          add.cell.ids = c("C57BL6", "F420")) %>%
+    SCTransform(vars.to.regress = "percent.mt",
+                verbose = FALSE,
+                return.only.var.genes = FALSE) %>%
+    process_seurat(resolution = 0.2,
+                   run_umap_dims = 1:30)
+
+DimPlot(B6.f420.combined,
+        label = TRUE,
+        split.by = "sample",
+        pt.size = 1,
+        cols = scales::alpha(plot_cols, 0.6)) +
+    coord_fixed() +
+    theme(axis.text = element_text(size = 5),
+          axis.title = element_text(size = 8),
+          plot.title = element_text(size = 10,
+                                    face = "bold",
+                                    hjust = 0.5),
+          strip.text = element_text(size = 8, face = "bold"),
+          plot.subtitle = element_text(size = 8, hjust = 0.5),
+          legend.text = element_text(size = 5),
+          legend.title = element_text(size = 6, face = "bold"),
+          strip.background = element_blank())
+
+ggsave("output/figures/combined_B6_F420.pdf",
+       width = 4,
+       height = 4)
+```
+
+## Combine BALBC and K7M2
+```{r balbc_k7m2, dependson='load_raw', eval=TRUE}
+###merge control and met datasets 
+balbc.k7m2.combined <-
+    merge(sobj_list[["BALBC"]],
+          y = sobj_list[["K7M2"]],
+          add.cell.ids = c("BALBC", "K7M2")) %>%
+    SCTransform(vars.to.regress = "percent.mt",
+                verbose = FALSE,
+                return.only.var.genes = FALSE) %>%
+    process_seurat(resolution = 0.2,
+                   run_umap_dims = 1:30)
+
+###Remove  dead cells cluster 9  noted by high expression of mitochondrial as well as small clusters 18-20
+
+#balbc.k7m2.combined.subset<-subset(balbc.k7m2.combined, idents = c("9", "18", "19", "20"), invert=T)
+balbc.k7m2.combined.subset<-RenameIdents(balbc.k7m2.combined.subset, `0`="Alveolar macrophage", `1`="Macrophage",`2`="T cell",`3`="Endothelial cell", `4`="K7M2", `5`="Granulocyte", `6`="Dendritic cell", `7`="B cell", `8`="Distal airway cell", `10`="Fibroblast", `11`="Endothelial cell", `12`="Macrophage",`13`="T cell",  `14`=" Proximal airway cell", `15`="Alveolar macrophage", `16`="Endothelial cell", `17`="Adipocyte")
+###add cluster identity to metadata
+balbc.k7m2.combined.subset$celltype.sample <- paste(Idents(balbc.k7m2.combined.subset), balbc.k7m2.combined.subset$sample, sep = "_") 
+balbc.k7m2.combined.subset$celltype <- Idents(balbc.k7m2.combined.subset)
+
+```
+
+### Run DE on combined data set
+```{r de_b6_F420, dependson='b6_f420', eval=TRUE}
+initial.markers <-
+    FindAllMarkers(B6.f420.combined,
+                   only.pos = TRUE,
+                   min.pct = 0.25,
+                   logfc.threshold = 0.5)
+```
+
+### Remove cycling and dead cells 
+clusters 3 and 13 noted by high expression of mitochondrial and cell cycling genes respectively
+
+We should come up with automated ways to define these - MVC
+```{r remove_cycling, dependson='de_b6_F420', eval=TRUE}
+B6.f420.combined.subset <-
+    subset(B6.f420.combined,
+           idents = c("3", "13"),
+           invert = TRUE)
+```
+
+### Cluster assignments
+Based on canonical markers and marker genes.
+```{r cluster_assignments, dependson='remove_cycling', eval=TRUE}
+B6.f420.combined.subset <-
+    RenameIdents(B6.f420.combined.subset,
+                 `0` = "Macrophage",
+                 `1` = "Alveolar macrophage",
+                 `2` = "Endothelial cell",
+                 `4` = "T cell",
+                 `5` = "Dendritic cell",
+                 `6` = "Proximal airway cell",
+                 `7` = "Distal airway cell",
+                 `8` = "Fibroblast",
+                 `9` = "B cell",
+                 `10` = "Endothelial cell",
+                 `11` = "Dendritic cell",
+                 `12` = "Granulocyte",
+                 `14` = "F420",
+                 `15` = "Erythrocyte",
+                 `16` = "Smooth muscle cell",
+                 `17` = "Adipocyte",
+                 `18` = "Mesothelial cell")
+
+###add cluster identity to metadata
+B6.f420.combined.subset$celltype.sample <-
+    paste(Idents(B6.f420.combined.subset),
+          B6.f420.combined.subset$sample,
+          sep = "_")
+
+B6.f420.combined.subset$celltype <- Idents(B6.f420.combined.subset)
+```
+
+### Addmodules GSEA with msigdbr
+```{r add_modules, dependson='cluster_assignments', eval=TRUE}
+###markers for plotting
+B6.F420.combined.plotmarkers <-
+    c("Itgam", "Fcgr1", "Cd68", "Adgre1", "Ccr2", "Cx3cr1", "Ly6c2", "Itgax",
+      "Mertk", "Marco", "Siglecf", "Egr2", "Bhlhe41", "Fabp1", "Olr1", "Alox5",
+      "Vwf", "Tek", "Acer2", "Cavin3", "Pecam1", "Emcn", "Lyve1", "Ptprb",
+      "Plvap", "Cd3d", "Cd4", "Cd8b1", "Tcf7", "Il7r", "Lef1", "Dusp10", "Itk",
+      "Cd207", "Cd209a", "Ccr7", "Ccl17", "Ccl22", "Wdfy4", "Clec4b1",
+      "H2-DMb1", "Etv3", "Itgae", "Xcr1", "Epcam", "Scgb1a1", "Tuba1a", "Foxj1",
+      "Sftpd", "Lamp3", "Etv5", "Ager", "Aqp5", "Col1a2", "Col3a1", "Col1a1",
+      "Loxl1", "Pdgfra", "Pdgfrb", "Fn1", "Ltbp4", "Bgn", "Cd19", "Cd79a",
+      "Cd79b", "Iglc2", "Ighm", "Pax5", "Cd33", "Csf3r", "S100a9", "Cxcr2",
+      "Mxd1", "Ptafr", "Steap1", "Crabp2", "Wisp1", "Dclk1", "Twist1", "Il1rl1",
+      "Ctgf", "Hbb-bs", "Hba-a1", "Myh11", "Cox4i2", "Pde5a", "Cfd", "Car3",
+      "Adipoq", "Msln")
+
+all_gene_sets <- msigdbr(species = "Mus musculus")
+
+pathways <-
+    list("HALLMARK_INFLAMMATORY_RESPONSE" = "Inflammation_features",
+         "WP_LUNG_FIBROSIS" = "Lung_fibrosis_features",
+         "HALLMARK_TNFA_SIGNALING_VIA_NFKB" = "TNFA_features",
+         "REACTOME_DEGRADATION_OF_THE_EXTRACELLULAR_MATRIX" = "ECM_degrad_features",
+         "REACTOME_EXTRACELLULAR_MATRIX_ORGANIZATION" = "ECM_org_features",
+         "GOBP_RESPONSE_TO_WOUNDING" = "Wound_response_features")
+
+for (pathway in pathways) {
+    gene_list <-
+        list(filter(all_gene_sets,
+               gs_name == pathway)$gene_symbol)
+    B6.f420.combined.subset <-
+        AddModuleScore(B6.f420.combined.subset,
+                       features = gene_list,
+                       name = pathways[[pathway]])
+}
+
+```
 ###subset epithelial cells and re-normalize
 b6.f420.combined.AEC=subset(B6.f420.combined.subset, idents = "Distal airway cell")
 b6.f420.combined.AEC<- SCTransform(b6.f420.combined.AEC, vars.to.regress = "percent.mt", verbose = FALSE, return.only.var.genes = FALSE)
@@ -109,12 +307,8 @@ f420.macs<- FindNeighbors(f420.macs, dims = 1:30, verbose = FALSE)
 f420.macs<- FindClusters(f420.macs,resolution=0.4, verbose = FALSE)
 mac.markers<-c("Itgam","Itgax", "Cd14", "Fcgr3", "Fcgr1", "Cd68", "Adgre1", "Ccr2", "Cx3cr1", "Ly6c1", "Ly6c2", "H2-Ab1", "H2-DMb1")
 ###Create and merge BALBC and k7M2 seurat objects followed by scTransform
-BALBC<-CreateSeuratObject(counts = raw.balbc, min.cells = 3, min.features =200 )
-BALBC$sample <- "BALBC"
-BALBC[["percent.mt"]] <- PercentageFeatureSet(BALBC, pattern = "^mt-")
-K7M2<-CreateSeuratObject(counts = raw.k7m2, min.cells = 3, min.features =200 )
-K7M2$sample <- "K7M2"
-K7M2[["percent.mt"]] <- PercentageFeatureSet(K7M2, pattern = "^mt-")
+
+
 ###merge control and met datasets 
 balbc.k7m2.combined=merge(BALBC, y=K7M2, add.cell.ids = c("BALBC","K7M2"))
 ###scTransform merged data sets to include all genes in scaled data 
@@ -131,6 +325,7 @@ balbc.k7m2.combined.subset<-RenameIdents(balbc.k7m2.combined.subset, `0`="Alveol
 ###add cluster identity to metadata
 balbc.k7m2.combined.subset$celltype.sample <- paste(Idents(balbc.k7m2.combined.subset), balbc.k7m2.combined.subset$sample, sep = "_") 
 balbc.k7m2.combined.subset$celltype <- Idents(balbc.k7m2.combined.subset)
+
 ###add module scores
 balbc.k7m2.combined.subset<-AddModuleScore(balbc.k7m2.combined.subset, features =Inflammation_list, name = 'Inflammation_features')
 balbc.k7m2.combined.subset<-AddModuleScore(balbc.k7m2.combined.subset, features =Lung_fibrosis_list, name = 'Lung_fibrosis_features')
