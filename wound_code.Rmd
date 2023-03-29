@@ -123,7 +123,7 @@ qs::qsave(sobj_list,
 sobj_list <- qs::qread("output/rdata/sobj_list.qs")
 
 ###scTransform merged data sets to include all genes in scaled data
-B6.f420.combined <-
+b6_f420_combined <-
     merge(sobj_list[["C57BL6"]],
           y = sobj_list[["F420"]],
           add.cell.ids = c("C57BL6", "F420")) %>%
@@ -133,8 +133,8 @@ B6.f420.combined <-
     process_seurat(resolution = 0.2,
                    run_umap_dims = 1:30)
 
-B6.f420.combined <-
-    RenameIdents(B6.f420.combined,
+b6_f420_combined <-
+    RenameIdents(b6_f420_combined,
                  `0` = "Macrophage",
                  `1` = "Alveolar macrophage",
                  `2` = "Endothelial cell",
@@ -154,14 +154,14 @@ B6.f420.combined <-
                  `18` = "Mesothelial cell")
 
 ###add cluster identity to metadata
-B6.f420.combined$celltype.sample <-
-    paste(Idents(B6.f420.combined),
-          B6.f420.combined$sample,
+b6_f420_combined$celltype_sample <-
+    paste(Idents(b6_f420_combined),
+          b6_f420_combined$sample,
           sep = "_")
 
-B6.f420.combined$celltype <- Idents(B6.f420.combined)
+b6_f420_combined$celltype <- Idents(b6_f420_combined)
 
-DimPlot(B6.f420.combined,
+DimPlot(b6_f420_combined,
         label = TRUE,
         split.by = "sample",
         pt.size = 1,
@@ -186,7 +186,7 @@ ggsave("output/figures/combined_B6_F420.pdf",
 ## BALBC and K7M2
 ```{r balbc_k7m2, dependson='load_raw', eval=TRUE}
 ###merge control and met datasets
-balbc.k7m2.combined <-
+balbc_k7m2_combined <-
     merge(sobj_list[["BALBC"]],
           y = sobj_list[["K7M2"]],
           add.cell.ids = c("BALBC", "K7M2")) %>%
@@ -200,14 +200,14 @@ balbc.k7m2.combined <-
 dead_cell_cluster <- "9"
 small_clusters <- c("18", "19", "20")
 
-balbc.k7m2.combined <-
-    subset(balbc.k7m2.combined,
+balbc_k7m2_combined <-
+    subset(balbc_k7m2_combined,
            idents = c(dead_cell_cluster,
                       small_clusters),
            invert = T)
 
-balbc.k7m2.combined <-
-    RenameIdents(balbc.k7m2.combined,
+balbc_k7m2_combined <-
+    RenameIdents(balbc_k7m2_combined,
                  `0` = "Alveolar macrophage",
                  `1` = "Macrophage",
                  `2` = "T cell",
@@ -227,33 +227,33 @@ balbc.k7m2.combined <-
                  `17` = "Adipocyte")
 
 ###add cluster identity to metadata
-balbc.k7m2.combined$celltype.sample <-
-    paste(Idents(balbc.k7m2.combined),
-          balbc.k7m2.combined$sample,
+balbc_k7m2_combined$celltype_sample <-
+    paste(Idents(balbc_k7m2_combined),
+          balbc_k7m2_combined$sample,
           sep = "_")
     
-balbc.k7m2.combined$celltype <- Idents(balbc.k7m2.combined)
+balbc_k7m2_combined$celltype <- Idents(balbc_k7m2_combined)
 ```
 
 ## BALBC and K7M2
 ```{r merge_balbc_k7m2, dependson='load_raw', eval=TRUE}
-
-###merge control and met datasets 
-balbc.k7m2.combined <-
+###merge control and met datasets
+balbc_k7m2_combined <-
     merge(BALBC, y = K7M2, add.cell.ids = c("BALBC", "K7M2")) %>%
-###scTransform merged data sets to include all genes in scaled data 
+    ###scTransform merged data sets to include all genes in scaled data
     SCTransform(vars.to.regress = "percent.mt",
                 verbose = FALSE,
                 return.only.var.genes = FALSE) %>%
     RunPCA(verbose = FALSE) %>%
     RunUMAP(dims = 1:30, verbose = FALSE) %>%
-###cluster low resolution "birds eye view" of lung microenvironment
+    ###cluster low resolution "birds eye view" of lung microenvironment
     FindNeighbors(dims = 1:30, verbose = FALSE) %>%
     FindClusters(resolution = 0.2, verbose = FALSE)
-###Remove  dead cells cluster 9  noted by high expression of mitochondrial as well as small clusters 18-20
 
-balbc.k7m2.combined <-
-    subset(balbc.k7m2.combined,
+###Remove dead cells cluster 9  noted by high expression of mitochondrial as well as small clusters 18-20
+
+balbc_k7m2_combined <-
+    subset(balbc_k7m2_combined,
            idents = c("9", "18", "19", "20"),
            invert = T) %>%
     RenameIdents(`0` = "Alveolar macrophage",
@@ -275,13 +275,13 @@ balbc.k7m2.combined <-
                  `17` = "Adipocyte")
 
 ###add cluster identity to metadata
-balbc.k7m2.combined$celltype.sample <-
-    paste(Idents(balbc.k7m2.combined),
-          balbc.k7m2.combined$sample,
+balbc_k7m2_combined$celltype_sample <-
+    paste(Idents(balbc_k7m2_combined),
+          balbc_k7m2_combined$sample,
           sep = "_")
     
-balbc.k7m2.combined$celltype <-
-    Idents(balbc.k7m2.combined)
+balbc_k7m2_combined$celltype <-
+    Idents(balbc_k7m2_combined)
 ```
 
 # Process the data further
@@ -291,8 +291,8 @@ balbc.k7m2.combined$celltype <-
 ### Run DE on B6 F420 combined data sets
 This isn't used further. Is it needed or should we save it out to a text file?
 ```{r de_b6_F420, dependson='b6_f420', eval=TRUE}
-initial.markers <-
-    FindAllMarkers(B6.f420.combined,
+initial_markers <-
+    FindAllMarkers(b6_f420_combined,
                    only.pos = TRUE,
                    min.pct = 0.25,
                    logfc.threshold = 0.5)
@@ -303,18 +303,18 @@ clusters 3 and 13 noted by high expression of mitochondrial and cell cycling gen
 
 We should come up with automated ways to define these - MVC
 ```{r remove_cycling, dependson='de_b6_F420', eval=TRUE}
-B6.f420.combined <-
-    subset(B6.f420.combined,
+b6_f420_combined <-
+    subset(b6_f420_combined,
            idents = c("3", "13"),
            invert = TRUE)
 ```
 
 ### Addmodules GSEA with msigdbr
-Doing this on B6.f420.combined and balbc.k7m2.combined
+Doing this on b6_f420_combined and balbc_k7m2_combined
 ```{r add_modules, dependson='cluster_assignments', eval=TRUE}
 # Not used?
 ###markers for plotting
-# B6.F420.combined.plotmarkers <-
+# b6_F420_combined.plotmarkers <-
 #     c("Itgam", "Fcgr1", "Cd68", "Adgre1", "Ccr2", "Cx3cr1", "Ly6c2", "Itgax",
 #       "Mertk", "Marco", "Siglecf", "Egr2", "Bhlhe41", "Fabp1", "Olr1", "Alox5",
 #       "Vwf", "Tek", "Acer2", "Cavin3", "Pecam1", "Emcn", "Lyve1", "Ptprb",
@@ -342,7 +342,7 @@ pathways <-
          "GSE5099_CLASSICAL_M1_VS_ALTERNATIVE_M2_MACROPHAGE_UP" = "m1_features",
          "GOBP_POSITIVE_REGULATION_OF_PHAGOCYTOSIS" = "phagocytosis_features")
 
-for (sample_name in c("B6.f420.combined", "balbc.k7m2.combined")) {
+for (sample_name in c("b6_f420_combined", "balbc_k7m2_combined")) {
     # temporarily copy the data from the target object so we can loop through
     sobj <- get(sample_name)
     for (pathway in pathways) {
@@ -365,16 +365,16 @@ for (sample_name in c("B6.f420.combined", "balbc.k7m2.combined")) {
 
 ### Subset epithelial cells from B6/F420 cells and re-normalize
 ```{r subset_epithelial, dependson='add_modules', eval=TRUE}
-b6.f420.combined.AEC_1 <-
-    B6.f420.combined %>%
+b6_f420_combined_aec_1 <-
+    b6_f420_combined %>%
     subset(idents = "Distal airway cell") %>%
     SCTransform(vars.to.regress = "percent.mt",
                 verbose = FALSE,
                 return.only.var.genes = FALSE) %>%
     process_seurat(run_umap_dims = 1:30, resolution = 0.6) %>%
 
-b6.f420.combined.AEC_1 <-
-    b6.f420.combined.AEC_1 %>%
+b6_f420_combined_aec_1 <-
+    b6_f420_combined_aec_1 %>%
     ### Remove contaminating non-epithelial cells-immune cells
     subset(idents = c("1", "2", "3", "6")) %>%
     ###remove contaminating proximal airway cells
@@ -384,7 +384,8 @@ b6.f420.combined.AEC_1 <-
                 verbose = FALSE,
                 return.only.var.genes = FALSE) %>%
     process_seurat(run_umap_dims = 1:30, resolution = 0.6) %>%
-    ###cluster identification based on published data sets-PMIDs 32750316,32661339,32678092 
+    # Cluster identification based on published data sets-PMIDs
+    # 32750316,32661339,32678092
     RenameIdents(`0` = "pAEC2",
                  `1` = "DATP",
                  `2` = "AEC2",
@@ -397,8 +398,8 @@ b6.f420.combined.AEC_1 <-
 #### DE on B6/F420 epithelial cells
 This isn't used further, should we save it out to a file?
 ```{r DE_epithelial, dependson='subset_epithelial', eval=TRUE}
-initial.epimarkers <-
-    FindAllMarkers(b6.f420.combined.AEC_1,
+initial_epimarkers <-
+    FindAllMarkers(b6_f420_combined_aec_1,
                    only.pos = TRUE,
                    min.pct = 0.25,
                    logfc.threshold = 0.5)
@@ -407,7 +408,7 @@ initial.epimarkers <-
 # This isn't used anywhere
 # If we want to use this sort of info somewhere we should centralize it to a
 # single chunk somewhere up top
-# Distalairway.markers <-
+# Distalairway_markers <-
 #     c("Lcn2", "Lrg1", "Cxcl17", "Glrx", "Krt8", "Sfn", "Krt19", "Cldn4",
 #       "Trp53", "Ctgf", "Sftpa1", "Sftpb", "Sftpc", "Lpcat1", "Etv5", "Abca3",
 #       "Pdpn", "Aqp5", "Hopx", "Cav1", "Ager", "Akap5", "Clic5", "Top2a",
@@ -416,10 +417,10 @@ initial.epimarkers <-
 
 #### F420 macrophages
 ```{r f420_macs, dependson='subset_epithelial', eval=TRUE}
-f420.macs <-
-    b6.f420.combined.AEC_1 %>%
+f420_macs <-
+    b6_f420_combined_aec_1 %>%
     subset(idents = "PUT STUFF HERE TO GET MACS") %>%
-    SCTransform(f420.macs,
+    SCTransform(f420_macs,
                 vars.to.regress = "percent.mt",
                 verbose = FALSE,
                 return.only.var.genes = FALSE) %>%
@@ -433,24 +434,25 @@ f420.macs <-
 
 ### Epithelial cells from BALB/c K7M2
 ```{r subset_epithelial_balbc, dependson='add_modules', eval=TRUE}
-balbc.k7m2.combined.AEC <-
-    subset(balbc.k7m2.combined, idents = "Distal airway cell") %>%
-    SCTransform(balbc.k7m2.combined.AEC,
+balbc_k7m2_combined_aec <-
+    subset(balbc_k7m2_combined, idents = "Distal airway cell") %>%
+    SCTransform(balbc_k7m2_combined_aec,
                 vars.to.regress = "percent.mt",
                 verbose = FALSE,
                 return.only.var.genes = FALSE) %>%
     process_seurat(run_umap_dims = 1:30, resolution = 0.6)
 
-balbc.k7m2.combined.AEC <-
-    balbc.k7m2.combined.AEC %>%
+balbc_k7m2_combined_aec <-
+    balbc_k7m2_combined_aec %>%
     ###remove contaminating non-epithelial cells-immune cells
     subset(idents = c("2", "3", "4", "5", "6", "7"))
-    SCTransform(balbc.k7m2.combined.AEC,
+    SCTransform(balbc_k7m2_combined_aec,
                 vars.to.regress = "percent.mt",
                 verbose = FALSE,
                 return.only.var.genes = FALSE) %>%
     process_seurat(run_umap_dims = 1:30, resolution = 0.6)
-    ###cluster identification based on published data sets-PMIDs 32750316,32661339,32678092 
+    # Cluster identification based on published data sets-PMIDs
+    # 32750316,32661339,32678092
     RenameIdents(`0` = "pAEC2",
                  `1` = "DATP",
                  `2` = "AEC2",
@@ -458,32 +460,35 @@ balbc.k7m2.combined.AEC <-
                  `4` = "AEC1",
                  `5` = "cAEC2")
 
-balbc.k7m2.combined.AEC_1$celltype.sample <- paste(Idents(balbc.k7m2.combined.AEC_1), balbc.k7m2.combined.AEC_1$sample, sep = "_") 
-balbc.k7m2.combined.AEC_1$celltype <- Idents(balbc.k7m2.combined.AEC_1)
+balbc_k7m2_combined.AEC_1$celltype_sample <-
+    paste(Idents(balbc_k7m2_combined.AEC_1),
+          balbc_k7m2_combined.AEC_1$sample,
+          sep = "_")
+balbc_k7m2_combined.AEC_1$celltype <- Idents(balbc_k7m2_combined.AEC_1)
 ```
 
 #### K7M2 macrophages
 ```{r k7m2_macs, dependson='subset_epithelial_balbc', eval=TRUE}
-Idents(balbc.k7m2.combined) <- "celltype.sample"
+Idents(balbc_k7m2_combined) <- "celltype_sample"
 ###remove "K7M2" from BALBC
-balbc.k7m2.combined <-
-    subset(balbc.k7m2.combined,
+balbc_k7m2_combined <-
+    subset(balbc_k7m2_combined,
            idents = "K7M2_BALBC",
            invert = T)
 
 ###scTransform macs
-k7m2.macs <-
-    subset(balbc.k7m2.combined,
+k7m2_macs <-
+    subset(balbc_k7m2_combined,
            idents = "K7M2" &
            cell.type == "PUT STUFF HERE TO GET MACS") %>%
-    SCTransform(k7m2.macs,
+    SCTransform(k7m2_macs,
                 vars.to.regress = "percent.mt",
                 verbose = FALSE,
                 return.only.var.genes = FALSE) %>%
     process_seurat(run_umap_dims = 1:30, resolution = 0.4)
 
-k7m2.mac.markers <-
-    FindAllMarkers(k7m2.macs,
+k7m2_mac_markers <-
+    FindAllMarkers(k7m2_macs,
                    only.pos = T,
                    logfc.threshold = 0.5,
                    min.pct = 0.25)
@@ -491,15 +496,15 @@ k7m2.mac.markers <-
 ###mac cluster annotation based on PMID: 35690521, 32849616, 35365629
 
 ###remove contaminating endothelial, T cells
-f420.mac.subset <-
-    subset(f420.macs,
+f420_mac_subset <-
+    subset(f420_macs,
            idents = c("7", "9"),
            invert = T)
 
 ###mac markers based on 35690521 LA-TAM, ANGIO-TAM, IFN-TAM, INFLAM-TAM, PROLIF-TAM, Classical monocyte, nonclassical
 
 # not used
-TAM.markers <-
+TAM_markers <-
     c("Spp1", "Vegfa", "Fabp5", "Gpnmb", "Lgals3", "Apoe", "Pf4", "Mrc1",
       "Cd206", "Arg1", "Cxcl1", "Cxcl2", "Cxcl3", "Il1a", "Il1b", "Inhba",
       "Ccl20", "Cxcl9", "Cxcl10", "Ifit1", "Ifitm1", "Tnfsf10", "Fn1", "Hmox1",
