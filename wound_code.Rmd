@@ -22,6 +22,37 @@ knitr::opts_chunk$set(
 )
 ```
 
+# Sample summary
+
+- Our data
+    - stuff here
+- GSE141259
+    - Longitudinal single-cell transcriptomics analysis of mouse lung upon bleomycin-induced injury
+    - PMID: 32678092
+    - DropSeq
+    - Has three standard gz files plus metadata
+- GSE145031
+    - Inflammatory Signals induce AT2 Cell-Derived Damage-Associated Transient Progenitors that Mediate Alveolar Regeneration
+    - PMID: 32750316
+    - 10X
+    - Has three standard gz files
+- GSE157995
+    - Single-cell RNA-sequencing of bleomycin-injured young and old mice
+    - PMID: 35389887
+    - 10X
+    - Has csv.gz files with count matrices
+    - Six samples have .h5 files instead
+- GSE201698
+    - Time-course cellular interactome analysis by single-cell RNA-seq in bleomycin-induced pulmonary fibrosis
+    - not published
+    - BD Rhapsody platform
+    - Has txt.gz files with count matrices
+- GSE151374
+    - The Anti-Fibrotic Drug Nintedanib Promotes Expansion of Lung Macrophages with a Distinct Transcriptional Repair Program in Bleomycin-Exposed Mice
+    - PMID: 36227799
+    - Think it's 10x - Not sure - paper not available
+    - Has .h5 files
+
 # Load packages
 ```{r lib}
 library(cowplot)
@@ -52,6 +83,13 @@ do
   fi
 done
 ```
+
+plots
+
+singler
+refs
+
+
 
 # Load raw data
 ```{r load_raw, cache.vars = '', eval=TRUE}
@@ -167,7 +205,7 @@ DimPlot(b6_f420_combined,
         pt.size = 1,
         cols = scales::alpha(plot_cols, 0.6)) +
     coord_fixed() +
-    theme_roberts(axis.text = element_text(size = 5),
+    theme(axis.text = element_text(size = 5),
           axis.title = element_text(size = 8),
           plot.title = element_text(size = 10,
                                     face = "bold",
@@ -231,60 +269,15 @@ balbc_k7m2_combined$celltype_sample <-
     paste(Idents(balbc_k7m2_combined),
           balbc_k7m2_combined$sample,
           sep = "_")
-    
+
 balbc_k7m2_combined$celltype <- Idents(balbc_k7m2_combined)
 ```
 
-## BALBC and K7M2
-```{r merge_balbc_k7m2, dependson='load_raw', eval=TRUE}
-###merge control and met datasets
-balbc_k7m2_combined <-
-    merge(BALBC, y = K7M2, add.cell.ids = c("BALBC", "K7M2")) %>%
-    ###scTransform merged data sets to include all genes in scaled data
-    SCTransform(vars.to.regress = "percent.mt",
-                verbose = FALSE,
-                return.only.var.genes = FALSE) %>%
-    RunPCA(verbose = FALSE) %>%
-    RunUMAP(dims = 1:30, verbose = FALSE) %>%
-    ###cluster low resolution "birds eye view" of lung microenvironment
-    FindNeighbors(dims = 1:30, verbose = FALSE) %>%
-    FindClusters(resolution = 0.2, verbose = FALSE)
-
-###Remove dead cells cluster 9  noted by high expression of mitochondrial as well as small clusters 18-20
-
-balbc_k7m2_combined <-
-    subset(balbc_k7m2_combined,
-           idents = c("9", "18", "19", "20"),
-           invert = T) %>%
-    RenameIdents(`0` = "Alveolar macrophage",
-                 `1` = "Macrophage",
-                 `2` = "T cell",
-                 `3` = "Endothelial cell",
-                 `4` = "K7M2",
-                 `5` = "Granulocyte",
-                 `6` = "Dendritic cell",
-                 `7` = "B cell",
-                 `8` = "Distal airway cell",
-                 `10` = "Fibroblast",
-                 `11` = "Endothelial cell",
-                 `12` = "Macrophage",
-                 `13` = "T cell",
-                 `14` = "Proximal airway cell",
-                 `15` = "Alveolar macrophage",
-                 `16` = "Endothelial cell",
-                 `17` = "Adipocyte")
-
-###add cluster identity to metadata
-balbc_k7m2_combined$celltype_sample <-
-    paste(Idents(balbc_k7m2_combined),
-          balbc_k7m2_combined$sample,
-          sep = "_")
-    
-balbc_k7m2_combined$celltype <-
-    Idents(balbc_k7m2_combined)
-```
-
 # Process the data further
+
+
+hey also i was wondering if you could help me with some code to get a seurat object started from the "whole lung data sets" in from this paper: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE141259 
+
 
 ## B6 F420 datasets
 
@@ -310,6 +303,9 @@ b6_f420_combined <-
 ```
 
 ### Addmodules GSEA with msigdbr
+
+cutoff: logfc > 1 and less than in 15% of other cells, >50% of cells in cluster
+
 Doing this on b6_f420_combined and balbc_k7m2_combined
 ```{r add_modules, dependson='cluster_assignments', eval=TRUE}
 # Not used?
@@ -345,14 +341,14 @@ pathways <-
 for (sample_name in c("b6_f420_combined", "balbc_k7m2_combined")) {
     # temporarily copy the data from the target object so we can loop through
     sobj <- get(sample_name)
-    for (pathway in pathways) {
+    for (pathway in names(pathways)) {
         gene_list <-
             list(filter(all_gene_sets,
-                gs_name == pathway)$gene_symbol)
+                        gs_name == pathway)$gene_symbol)
         sobj <-
             AddModuleScore(sobj,
-                        features = gene_list,
-                        name = pathways[[pathway]])
+                           features = gene_list,
+                           name = pathways[[pathway]])
     }
     # Put the new data back into the original variable
     assign(sample_name, sobj)
@@ -371,14 +367,14 @@ b6_f420_combined_aec_1 <-
     SCTransform(vars.to.regress = "percent.mt",
                 verbose = FALSE,
                 return.only.var.genes = FALSE) %>%
-    process_seurat(run_umap_dims = 1:30, resolution = 0.6) %>%
+    process_seurat(run_umap_dims = 1:30, resolution = 0.6)
 
 b6_f420_combined_aec_1 <-
     b6_f420_combined_aec_1 %>%
     ### Remove contaminating non-epithelial cells-immune cells
-    subset(idents = c("1", "2", "3", "6")) %>%
+    subset(idents = c("1", "2", "3", "6"), invert = TRUE) %>% # Should this be inverted? wasn't sure - mvc
     ###remove contaminating proximal airway cells
-    subset(idents = "5", invert = T) %>%
+    subset(idents = "5", invert = TRUE) %>%
     ###re-cluster with pure epithelial cell populations
     SCTransform(vars.to.regress = "percent.mt",
                 verbose = FALSE,
@@ -436,8 +432,7 @@ f420_macs <-
 ```{r subset_epithelial_balbc, dependson='add_modules', eval=TRUE}
 balbc_k7m2_combined_aec <-
     subset(balbc_k7m2_combined, idents = "Distal airway cell") %>%
-    SCTransform(balbc_k7m2_combined_aec,
-                vars.to.regress = "percent.mt",
+    SCTransform(vars.to.regress = "percent.mt",
                 verbose = FALSE,
                 return.only.var.genes = FALSE) %>%
     process_seurat(run_umap_dims = 1:30, resolution = 0.6)
@@ -445,12 +440,12 @@ balbc_k7m2_combined_aec <-
 balbc_k7m2_combined_aec <-
     balbc_k7m2_combined_aec %>%
     ###remove contaminating non-epithelial cells-immune cells
-    subset(idents = c("2", "3", "4", "5", "6", "7"))
+    subset(idents = c("2", "3", "4", "5", "6", "7")) %>%
     SCTransform(balbc_k7m2_combined_aec,
                 vars.to.regress = "percent.mt",
                 verbose = FALSE,
                 return.only.var.genes = FALSE) %>%
-    process_seurat(run_umap_dims = 1:30, resolution = 0.6)
+    process_seurat(run_umap_dims = 1:30, resolution = 0.6) %>%
     # Cluster identification based on published data sets-PMIDs
     # 32750316,32661339,32678092
     RenameIdents(`0` = "pAEC2",
