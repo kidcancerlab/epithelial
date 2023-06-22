@@ -42,6 +42,7 @@ knitr::opts_chunk$set(
     - 10X
     - Has csv.gz files with count matrices
     - Six samples have .h5 files instead
+    - No metadata included and the code is hand annotated
 - GSE201698
     - Time-course cellular interactome analysis by single-cell RNA-seq in bleomycin-induced pulmonary fibrosis
     - not published
@@ -88,7 +89,39 @@ plots
 
 singler
 refs
+### Get cell type reference datasets
+GSE151974
+```{r mouse_refs}
+ref_path <- "/home/gdrobertslab/lab/GenRef/sc_ref_datasets/mouse"
+mouse_lung_ref <- qs::qread(paste0(ref_path, "/GSE151974/mouse_lung_ref.qs"))
+mouse_immune <- celldex::ImmGenData()
+# This label is not informative
+mouse_immune <-
+    mouse_immune[mouse_immune$label.main != "Stromal cells", ]
+mouse_rna <- celldex::MouseRNAseqData()
+```
 
+## Function to use for cell annotation
+```{r annotate_cells_fun}
+annot_cells <- function(sobject) {
+    cell_assign <-
+        SingleR::SingleR(as.SingleCellExperiment(sobject),
+                         ref = list(GetAssayData(mouse_lung_ref),
+                                    mouse_immune,
+                                    mouse_rna),
+                         labels = list(mouse_lung_ref$cell_type,
+                                       mouse_immune$label.main,
+                                       mouse_rna$label.fine),
+                         aggr.ref = TRUE)
+    sobject$cell_type <- cell_assign$labels
+    sobject$cell_score <- cell_assign$scores %>%
+        apply(MARGIN = 1, function(x) max(x, na.rm = TRUE))
+    return(sobject)
+}
+crazy_cols <- function(x) {
+    sample(rainbow(n = length(unique(x))))
+}
+```
 
 
 # Load raw data
@@ -106,10 +139,15 @@ if (grepl("r1pl", Sys.info()[["nodename"]])) {
     path_use <- "James_path"
 }
 
-for (i in seq_len(nrow(sample_list))) {
+#for (i in seq_len(nrow(sample_list))) {
+sobj_list <-
+    parallel::mclapply(seq_len(nrow(sample_list)),
+                       mc.cores = 4,
+                       function(i) {
     obj_name <- sample_list$obj_name[i]
+    message(obj_name)
 
-    sobj_list[[obj_name]] <-
+    sobj <-
         tenx_load_qc(paste0(data_path,
                             sample_list[[path_use]][i],
                             end_path),
@@ -119,11 +157,11 @@ for (i in seq_len(nrow(sample_list))) {
 
     # Add metadata to dataset
     for (colname in colnames(sample_list)) {
-        sobj_list[[obj_name]][[colname]] <- sample_list[[colname]][i]
+        sobj[[colname]] <- sample_list[[colname]][i]
     }
 
     # Add sample name to dataset
-    sobj_list[[obj_name]]$sample <- obj_name
+    sobj$sample <- obj_name
 
     cutoff_table <-
         tribble(~"feature",   ~"min_val",                    ~"max_val",
@@ -131,7 +169,7 @@ for (i in seq_len(nrow(sample_list))) {
                 "percent.mt", 0,                             sample_list$mt_max[i])
 
     plotted <-
-        feature_hist(sobj_list[[obj_name]],
+        feature_hist(sobj,
                      features = c("nCount_RNA", "percent.mt"),
                      cutoff_table = cutoff_table)
 
@@ -142,14 +180,19 @@ for (i in seq_len(nrow(sample_list))) {
            height = 10,
            plot = plotted)
 
-    sobj_list[[obj_name]] <-
-        sobj_list[[obj_name]] %>%
+    sobj <-
+        sobj %>%
         subset(nCount_RNA   >= sample_list$ncount_rna_min[i] &
                nCount_RNA   <= sample_list$ncount_rna_max[i] &
                percent.mt   <= sample_list$mt_max[i]) %>%
         process_seurat()
 
-}
+    sobj <- annot_cells(sobj)
+    return(sobj)
+})
+
+names(sobj_list) <- sample_list$obj_name
+
 qs::qsave(sobj_list,
           file = "output/rdata/sobj_list.qs")
 ```
@@ -291,7 +334,7 @@ initial_markers <-
                    logfc.threshold = 0.5)
 ```
 
-### Remove cycling and dead cells 
+### Remove cycling and dead cells
 clusters 3 and 13 noted by high expression of mitochondrial and cell cycling genes respectively
 
 We should come up with automated ways to define these - MVC
