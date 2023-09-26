@@ -1,0 +1,64 @@
+sample_name	obj_name	sample_description	ncount_rna_min	ncount_rna_max	mt_max	geo	input_format	group
+Bleo1_GFPn	Bleo1_GFPn	Bleomycin day 14	0	15000	20	GSE132771	three files	bleo
+Bleo1_GFPp	Bleo1_GFPp	Bleomycin day 14	0	15000	20	GSE132771	three files	bleo
+Bleo2_GFPn	Bleo2_GFPn	Bleomycin day 14	0	15000	20	GSE132771	three files	bleo
+Bleo2_GFPp	Bleo2_GFPp	Bleomycin day 14	0	15000	20	GSE132771	three files	bleo
+GSM3716976_saline	GSM3716976_saline	Control	0	25000	20	GSE129605	three files	control
+GSM3716977_saline	GSM3716977_saline	Control	0	25000	20	GSE129605	three files	control
+GSM3716978_saline	GSM3716978_saline	Control	0	25000	20	GSE129605	three files	control
+GSM3716979_saline	GSM3716979_saline	Control	0	25000	20	GSE129605	three files	control
+GSM3716980_bleomycin	GSM3716980_bleomycin	Bleomycin day 11	0	25000	20	GSE129605	three files	bleo
+GSM3716981_bleomycin	GSM3716981_bleomycin	Bleomycin day 11	0	25000	20	GSE129605	three files	bleo
+GSM3716982_bleomycin	GSM3716982_bleomycin	Bleomycin day 11	0	35000	20	GSE129605	three files	bleo
+GSM3716983_bleomycin	GSM3716983_bleomycin	Bleomycin day 11	0	35000	20	GSE129605	three files	bleo
+GSM3716984_nintedanib	GSM3716984_nintedanib	Bleomycin plus nintedanib day 11	0	30000	20	GSE129605	three files	nintedanib
+GSM3716985_nintedanib	GSM3716985_nintedanib	Bleomycin plus nintedanib day 11	0	25000	20	GSE129605	three files	nintedanib
+GSM3716986_nintedanib	GSM3716986_nintedanib	Bleomycin plus nintedanib day 11	0	30000	20	GSE129605	three files	nintedanib
+GSM4304609_PBS_AT2_Tomato	GSM4304609_PBS_AT2_Tomato - AT2	Control AT2 cells	0	15000	40	GSE145031	three files	control
+GSM4304610_PBS_AT2_nonTomato	GSM4304610_PBS_AT2_nonTomato	Control other cells	0	15000	40	GSE145031	three files	control
+GSM4304611_Day14_AT2_Tomato	GSM4304611_Day14_AT2_Tomato - AT2	Bleomycin day 14 AT2 cells	0	25000	40	GSE145031	three files	bleo
+GSM4304612_Day14_AT2_nonTomato	GSM4304612_Day14_AT2_nonTomato	Bleomycin day 14 other cells	0	20000	40	GSE145031	three files	bleo
+GSM4304613_Day28_AT2_Tomato	GSM4304613_Day28_AT2_Tomato - AT2	Bleomycin day 28 AT2 cells	0	20000	40	GSE145031	three files	bleo
+GSM4304614_Day28_AT2_nonTomato	GSM4304614_Day28_AT2_nonTomato	Bleomycin day 28 other cells	0	25000	40	GSE145031	three files	bleo
+GSM4576588_751_1_raw_feature_bc_matrix	GSM4576588_751_1	Control None day 14 r1	0	10000	20	GSE151374	h5 file	control
+GSM4576589_751_2_raw_feature_bc_matrix	GSM4576589_751_2	Bleomycin None day 14 r1	0	10000	20	GSE151374	h5 file	bleo
+GSM4576590_751_3_raw_feature_bc_matrix	GSM4576590_751_3	Bleomycin Nintedanib day 14 r1	0	15000	20	GSE151374	h5 file	bleo nintedanib
+GSM4576591_751_4_raw_feature_bc_matrix	GSM4576591_751_4	Control None day 7 r1	0	10000	20	GSE151374	h5 file	control
+GSM4576592_751_5_raw_feature_bc_matrix	GSM4576592_751_5	Bleomycin None day 7 r1	0	15000	20	GSE151374	h5 file	bleo
+GSM4576593_751_6_raw_feature_bc_matrix	GSM4576593_751_6	Bleomycin Nintedanib day 7 r1	0	15000	20	GSE151374	h5 file	bleo nintedanib
+GSM4576594_751_7_raw_feature_bc_matrix	GSM4576594_751_7	Control None day 14 r2	0	10000	20	GSE151374	h5 file	control
+GSM4576595_751_8_raw_feature_bc_matrix	GSM4576595_751_8	Bleomycin None day 14 r2	0	10000	20	GSE151374	h5 file	bleo
+GSM4576596_751_9_raw_feature_bc_matrix	GSM4576596_751_9	Bleomycin Nintedanib day 14 r2	0	12000	20	GSE151374	h5 file	bleo nintedanib
+GSM4576597_751_10_raw_feature_bc_matrix	GSM4576597_751_10	Control None day 7 r2	0	8000	20	GSE151374	h5 file	control
+GSM4576598_751_11_raw_feature_bc_matrix	GSM4576598_751_11	Bleomycin None day 7 r2	0	12000	20	GSE151374	h5 file	bleo
+GSM4576599_751_12_raw_feature_bc_matrix	GSM4576599_751_12	Bleomycin Nintedanib day 7 r2	0	15000	20	GSE151374	h5 file	bleo nintedanib
+GSM4576600_751_13_raw_feature_bc_matrix	GSM4576600_751_13	Control None day 14 r3	0	8000	20	GSE151374	h5 file	control
+GSM4576601_751_14_raw_feature_bc_matrix	GSM4576601_751_14	Bleomycin None day 14 r3	0	12000	20	GSE151374	h5 file	bleo
+GSM4576602_751_15_raw_feature_bc_matrix	GSM4576602_751_15	Bleomycin Nintedanib day 14 r3	0	15000	20	GSE151374	h5 file	bleo nintedanib
+GSM4576603_751_16_raw_feature_bc_matrix	GSM4576603_751_16	Control None day 7 r3	0	10000	20	GSE151374	h5 file	control
+GSM4576604_751_17_raw_feature_bc_matrix	GSM4576604_751_17	Bleomycin None day 7 r3	0	15000	20	GSE151374	h5 file	bleo
+GSM4576605_751_18_raw_feature_bc_matrix	GSM4576605_751_18	Bleomycin Nintedanib day 7 r3	0	15000	20	GSE151374	h5 file	bleo nintedanib
+GSM4783858_OD0-1	GSM4783858_OD0-1	Old mice day 0 sample 1	0	15000	20	GSE157995	counts matrix	control
+GSM4783859_OD0-2	GSM4783859_OD0-2	Old mice day 0 sample 2	0	15000	20	GSE157995	counts matrix	control
+GSM4783860_OD0-3	GSM4783860_OD0-3	Old mice day 0 sample 3	0	15000	20	GSE157995	counts matrix	control
+GSM4783861_OD4-1	GSM4783861_OD4-1	Old mice day 4 sample 1	0	10000	20	GSE157995	counts matrix	bleo
+GSM4783862_OD4-2	GSM4783862_OD4-2	Old mice day 4 sample 2	0	15000	20	GSE157995	counts matrix	bleo
+GSM4783863_OD4-3	GSM4783863_OD4-3	Old mice day 4 sample 3	0	12000	20	GSE157995	counts matrix	bleo
+GSM4783864_OD4-4	GSM4783864_OD4-4	Old mice day 4 sample 4	0	15000	20	GSE157995	counts matrix	bleo
+GSM4783865_OD14-1	GSM4783865_OD14-1	Old mice day14 sample 1	0	100000	20	GSE157995	h5 file	bleo
+GSM4783866_OD14-2	GSM4783866_OD14-2	Old mice day14 sample 2	0	125000	20	GSE157995	h5 file	bleo
+GSM4783867_OD14-3	GSM4783867_OD14-3	Old mice day14 sample 3	0	100000	20	GSE157995	h5 file	bleo
+GSM4783868_YD0-1	GSM4783868_YD0-1	Young mice day 0 sample 1	0	20000	20	GSE157995	counts matrix	control
+GSM4783869_YD0-2	GSM4783869_YD0-2	Young mice day 0 sample 2	0	15000	20	GSE157995	counts matrix	control
+GSM4783870_YD0-3	GSM4783870_YD0-3	Young mice day 0 sample 3	0	15000	20	GSE157995	counts matrix	control
+GSM4783871_YD4-1	GSM4783871_YD4-1	Young mice day 4 sample 1	0	40000	20	GSE157995	counts matrix	bleo
+GSM4783872_YD4-2	GSM4783872_YD4-2	Young mice day 4 sample 2	0	35000	20	GSE157995	counts matrix	bleo
+GSM4783873_YD4-3	GSM4783873_YD4-3	Young mice day 4 sample 3	0	45000	20	GSE157995	counts matrix	bleo
+GSM4783874_YD4-4	GSM4783874_YD4-4	Young mice day 4 sample 4	0	40000	20	GSE157995	counts matrix	bleo
+GSM4783875_YD14-1	GSM4783875_YD14-1	Young mice day 14 sample 1	0	100000	20	GSE157995	h5 file	bleo
+GSM4783876_YD14-2	GSM4783876_YD14-2	Young mice day 14 sample 2	0	100000	20	GSE157995	h5 file	bleo
+GSM4783877_YD14-3	GSM4783877_YD14-3	Young mice day 14 sample 3	0	100000	20	GSE157995	h5 file	bleo
+UT1_GFPn	UT1_GFPn	Control	0	10000	20	GSE132771	three files	control
+UT1_GFPp	UT1_GFPp	Control	0	10000	20	GSE132771	three files	control
+UT2_GFPn	UT2_GFPn	Control	0	10000	20	GSE132771	three files	control
+UT2_GFPp	UT2_GFPp	Control	0	10000	20	GSE132771	three files	control
