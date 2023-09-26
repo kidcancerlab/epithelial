@@ -118,7 +118,8 @@ annot_cells <- function(sobject) {
         apply(MARGIN = 1, function(x) max(x, na.rm = TRUE))
     return(sobject)
 }
-crazy_cols <- function(x) {
+crazy_cols <- function(x, seed = 1337) {
+    set.seed(seed)
     sample(rainbow(n = length(unique(x))))
 }
 ```
@@ -127,8 +128,6 @@ crazy_cols <- function(x) {
 # Load raw data
 ```{r load_raw, cache.vars = '', eval=TRUE}
 sample_list <- read_tsv("misc/sample_cutoffs.txt", show_col_types = FALSE)
-
-sobj_list <- list()
 
 end_path <- "/filtered_feature_bc_matrix"
 if (grepl("r1pl", Sys.info()[["nodename"]])) {
