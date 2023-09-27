@@ -238,7 +238,12 @@ sobj_list <-
 names(sobj_list) <- sample_list$obj_name
 
 qs::qsave(sobj_list,
-          file = "output/rdata/sobj_list.qs")
+          file = "output/rdata/sobj_list_bleo.qs")
+
+all_bleo <-
+    merge(sobj_list[[1]],
+          sobj_list[2:length(sobj_list)]) %>%
+    process_seurat()
 ```
 
 
@@ -310,12 +315,94 @@ sobj_list <-
 names(sobj_list) <- sample_list$obj_name
 
 qs::qsave(sobj_list,
-          file = "output/rdata/sobj_list.qs")
+          file = "output/rdata/sobj_list_ours.qs")
 
-all_data <-
+all_our_data <-
     merge(sobj_list[[1]],
           sobj_list[2:length(sobj_list)]) %>%
     process_seurat()
+```
+
+```{r eval=FALSE}
+our_sobj_list <- qs::qread("output/rdata/sobj_list_ours.qs")
+bleo_sobj_list <- qs::qread("output/rdata/sobj_list_bleo.qs")
+
+all_things <-
+    merge(our_sobj_list[[1]],
+          c(our_sobj_list[2:length(our_sobj_list)],
+            bleo_sobj_list)) %>%
+    process_seurat()
+
+all_things$group[is.na(all_things$group)] <- "our data"
+all_things$geo[is.na(all_things$geo)] <- "our data"
+
+qs::qsave(all_things,
+          file = "output/rdata/all_things_sobj.qs")
+
+DimPlot(subset(all_things,
+               subset = grepl("^AT", cell_type)),
+        group.by = "group")
+
+test2 <-
+    all_things[, grepl("Ciliated", all_things$cell_type)] %>%
+    process_seurat()
+
+DimPlot(test2,
+        group.by = "group",
+        split.by = "geo",
+        shuffle = TRUE)
+
+test3 <-
+    AverageExpression(test2, group.by = "group") %>%
+    as.data.frame()
+
+GGally::ggpairs(test3)
+
+test <-
+    Embeddings(subset(all_things,
+                  cell_type == "Int Mf"),
+               reduction = "pca")[, 1:9] %>%
+    as.data.frame() %>%
+    rownames_to_column("cell_id") %>%
+    pivot_longer(-cell_id,
+                 names_to = "pca",
+                 values_to = "value") %>%
+    left_join(all_things@meta.data %>%
+                as.data.frame() %>%
+                rownames_to_column("cell_id"),
+                by = "cell_id")
+
+ggplot(test,
+       aes(x = pca,
+           y = value,
+           fill = geo)) +
+    geom_boxplot()
+
+test_harm <-
+    harmony::RunHarmony(test2,
+                        group.by.vars = "geo")
+
+DimPlot(test_harm,
+        group.by = c("group", "obj_name"),
+        label = TRUE) +
+    NoLegend()
+
+test_limma <-
+    limma::removeBatchEffect(GetAssayData(test2),
+                             batch = test2$geo)
+test_limma_sobj <-
+    SetAssayData(test2, slot = "data", new.data = test_limma) %>%
+    ScaleData() %>%
+    RunPCA() %>%
+    RunUMAP(dims = 1:30)
+
+DimPlot(test_limma_sobj, group.by = c("geo", "group"))
+DimPlot(test_limma_sobj,
+        group.by = c("group", "obj_name"),
+        label = TRUE) +
+    NoLegend()
+# this made crap output
+
 ```
 
 # Make up Seurat objects with subsets of the data
