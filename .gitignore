@@ -41,3 +41,6 @@ vignettes/*.pdf
 # Downloaded datasets
 GSE*/*
 LungRefs/*
+
+# Local files and output
+output/*
