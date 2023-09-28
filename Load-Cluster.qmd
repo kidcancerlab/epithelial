@@ -1,5 +1,5 @@
 ---
-title: "Data Analysis for Fibrosis paper"
+title: "Data Analysis for Fibrosis paper - Loading and initial processing of stroma"
 author: "James Reineke and Matt Cannon"
 date: "`r format(Sys.time(), '%m/%d/%Y')`"
 format:
@@ -260,6 +260,7 @@ if(file.exists("misc/b6_f420_assignments.qs")) {
 }
 
 # Remove tumor cells, low quality cells, and erythrocytes
+Idents(b6_f420_combined) <- b6_f420_combined$cell_type_final
 b6_f420_combined <- subset(b6_f420_combined,
     idents = c("LowQ", "Erythro", "F420"),
     invert = TRUE)
@@ -389,6 +390,7 @@ if(file.exists("misc/balb_k7m2_assignments.qs")) {
 }
 
 # Remove tumor cells, low quality cells, and erythrocytes
+Idents(balb_k7m2_combined) <- balb_k7m2_combined$cell_type_final
 balb_k7m2_combined <- subset(balb_k7m2_combined,
     idents = c("LowQ", "Erythro", "K7M2"),
     invert = TRUE)
