@@ -1,0 +1,440 @@
+---
+title: "Data Analysis for Fibrosis paper - Loading and initial processing of stroma"
+author: "James Reineke and Matt Cannon"
+date: "`r format(Sys.time(), '%m/%d/%Y')`"
+format:
+    html:
+        toc: true
+        toc_float: true
+        toc_depth: 5
+        number_sections: false
+        code-fold: true
+        df-print: kable
+---
+
+# Sample summary
+
+- Our data
+    - stuff here
+- GSE141259
+    - Longitudinal single-cell transcriptomics analysis of mouse lung upon bleomycin-induced injury
+    - PMID: 32678092
+    - DropSeq
+    - Has three standard gz files plus metadata
+- GSE145031
+    - Inflammatory Signals induce AT2 Cell-Derived Damage-Associated Transient Progenitors that Mediate Alveolar Regeneration
+    - PMID: 32750316
+    - 10X
+    - Has three standard gz files
+- GSE157995
+    - Single-cell RNA-sequencing of bleomycin-injured young and old mice
+    - PMID: 35389887
+    - 10X
+    - Has csv.gz files with count matrices
+    - Six samples have .h5 files instead
+    - No metadata included and the code is hand annotated
+- GSE201698
+    - Time-course cellular interactome analysis by single-cell RNA-seq in bleomycin-induced pulmonary fibrosis
+    - not published
+    - BD Rhapsody platform
+    - Has txt.gz files with count matrices
+- GSE151374
+    - The Anti-Fibrotic Drug Nintedanib Promotes Expansion of Lung Macrophages with a Distinct Transcriptional Repair Program in Bleomycin-Exposed Mice
+    - PMID: 36227799
+    - Think it's 10x - Not sure - paper not available
+    - Has .h5 files
+
+# Load packages
+```{r lib}
+library(cowplot)
+library(cluster)
+library(tidyverse)
+library(ggrepel)
+library(patchwork)
+library(reticulate)
+library(Seurat)
+library(sctransform)
+library(rrrSingleCellUtils)
+library(msigdbr)
+library(parallel)
+
+# Set random generator seed to facilitate reproducibility
+set.seed(888)
+```
+
+## Make up directory structure
+```{bash mkdirs, eval=TRUE}
+for directoryName in \
+  output \
+  output/figures \
+  output/rdata \
+  output/de
+do
+  if [ ! -d ${directoryName} ]
+  then
+    mkdir -p ${directoryName}
+  fi
+done
+```
+
+### Get cell type reference datasets
+GSE151974
+```{r mouse_refs}
+ref_path <- "/home/gdrobertslab/lab/GenRef/sc_ref_datasets/mouse"
+mouse_lung_ref <- qs::qread(paste0(ref_path, "/GSE151974/mouse_lung_ref.qs"))
+mouse_immune <- celldex::ImmGenData()
+
+# This label is not informative
+mouse_immune <-
+    mouse_immune[mouse_immune$label.main != "Stromal cells", ]
+
+mouse_rna <- celldex::MouseRNAseqData()
+```
+
+## Functions to use for cell annotation
+```{r annotate_cells_fun}
+annot_cells <- function(sobject) {
+    cell_assign <- SingleR::SingleR(
+        as.SingleCellExperiment(sobject),
+        ref = list(GetAssayData(mouse_lung_ref), mouse_immune, mouse_rna),
+        labels = list(
+            mouse_lung_ref$cell_type,
+            mouse_immune$label.main,
+            mouse_rna$label.fine),
+        aggr.ref = TRUE)
+    sobject$cell_type <- cell_assign$labels
+    sobject$cell_score <- cell_assign$scores %>%
+        apply(MARGIN = 1, function(x) max(x, na.rm = TRUE))
+    return(sobject)
+}
+
+crazy_cols <- function(x, seed = 1337) {
+    set.seed(seed)
+    sample(rainbow(n = length(unique(x))))
+}
+```
+
+# Load raw data and suggest cell type
+```{r load_raw, cache.vars = '', eval=TRUE}
+sample_list <- read_tsv("misc/sample_cutoffs.txt", show_col_types = FALSE)
+
+end_path <- "/filtered_feature_bc_matrix"
+if (grepl("r1pl", Sys.info()[["nodename"]])) {
+    data_path <- "/home/gdrobertslab/lab/Counts/"
+    path_use <- "cluster_path"
+} else {
+    data_path <- "/Applications/scRNA_seq raw files/"
+    path_use <- "James_path"
+}
+
+sobj_list <- parallel::mclapply(seq_len(nrow(sample_list)),
+    mc.cores = parallelly::availableCores(),
+    function(i) {
+        obj_name <- sample_list$obj_name[i]
+        message(obj_name)
+
+        sobj <- tenx_load_qc(
+            paste0(data_path,sample_list[[path_use]][i], end_path),
+            min_cells = 3,
+            min_features = 200,
+            violin_plot = FALSE)
+
+        # Add metadata to dataset
+        for (colname in colnames(sample_list)) {
+            sobj[[colname]] <- sample_list[[colname]][i]
+        }
+
+        # Add sample name to dataset
+        sobj$sample <- obj_name
+
+        cutoff_table <-
+            tribble(~"feature",   ~"min_val",                    ~"max_val",
+                    "nCount_RNA", sample_list$ncount_rna_min[i], sample_list$ncount_rna_max[i],
+                    "percent.mt", 0,                             sample_list$mt_max[i])
+
+        plotted <- feature_hist(sobj,
+            features = c("nCount_RNA", "percent.mt"),
+            cutoff_table = cutoff_table)
+
+        ggsave(paste0("output/figures/feature_hist_", obj_name, ".png"),
+            width = 10,
+            height = 10,
+            plot = plotted)
+
+        sobj <- sobj %>%
+            subset(nCount_RNA   >= sample_list$ncount_rna_min[i] &
+                nCount_RNA   <= sample_list$ncount_rna_max[i] &
+                percent.mt   <= sample_list$mt_max[i]) %>%
+            process_seurat()
+
+        sobj <- annot_cells(sobj)
+        return(sobj)
+})
+
+names(sobj_list) <- sample_list$obj_name
+
+qs::qsave(sobj_list, file = "output/rdata/sobj_list.qs")
+```
+
+# Make up Seurat objects with subsets of the data
+
+## B6 and F420
+### Create the merged tumor/normal object
+Process into a shared UMAP space
+```{r b6_f420_1, dependson='load_raw', eval=TRUE}
+sobj_list <- qs::qread("output/rdata/sobj_list.qs")
+
+b6_f420_combined <- merge(sobj_list[["C57BL6"]],
+        y = sobj_list[["F420"]],
+        add.cell.ids = c("C57BL6", "F420")) %>%
+    SCTransform(verbose = FALSE) %>%
+    RunPCA(npcs = 30, verbose = FALSE) %>%
+    RunUMAP(dims = 1:30, seed.use = 22, verbose = FALSE) %>%
+    FindNeighbors(k.param = 30, reduction = "umap", dims = 1:2, verbose = FALSE) %>%
+    FindClusters(resolution  = 0.3, verbose = FALSE)
+```
+
+### Inspect identities from SingleR calls and other meta
+```{r b6_f420_2, dependson='b6_f420_1', eval=TRUE}
+# Check identities from SingleR calls and other meta
+DimPlot(b6_f420_combined, group.by = "seurat_clusters", split.by = "sample", label = TRUE) +
+    coord_fixed() +
+    theme(legend.position = "none")
+DimPlot(b6_f420_combined, group.by = "cell_type", split.by = "sample", label = TRUE) +
+    coord_fixed() +
+    theme(legend.position = "none")
+r_feature_plot(b6_f420_combined, features = "cell_score", split.by = "sample") +
+    coord_fixed()
+r_feature_plot(b6_f420_combined, features = "nCount_RNA", split.by = "sample") +
+    coord_fixed()
+r_feature_plot(b6_f420_combined, features = "Col1a1", split.by = "sample") +
+    coord_fixed()
+r_feature_plot(b6_f420_combined, features = "Col1a2", split.by = "sample") +
+    coord_fixed()
+```
+
+### Rename clusters based on the calls
+```{r b6_f420_3, dependson='b6_f420_1', eval=TRUE}
+if(file.exists("misc/b6_f420_assignments.qs")) {
+    b6_f420_combined <- AddMetaData(b6_f420_combined,
+        qs::qread("misc/b6_f420_assignments.qs"))
+} else {
+    # This list is manually curated from the SingleR assignments and scores
+    # If run again, this needs to be checked for accuracy, as clusters may change
+    b6_f420_combined <- RenameIdents(b6_f420_combined,
+        `0` = "Endo",
+        `1` = "Alv Mac",
+        `2` = "Mac",
+        `3` = "Mac",
+        `4` = "Alv Mac",
+        `5` = "Mac",
+        `6` = "Endo",
+        `7` = "NK/T",
+        `8` = "Fibroblast",
+        `9` = "F420",
+        `10` = "B",
+        `11` = "Mac",
+        `12` = "NK/T",
+        `13` = "Lower Airway",
+        `14` = "Upper Airway",
+        `15` = "Mono",
+        `16` = "F420",
+        `17` = "Upper Airway",
+        `18` = "Granulo",
+        `19` = "DC",
+        `20` = "DC",
+        `21` = "Erythro",
+        `22` = "DC",
+        `23` = "Peri",
+        `24` = "Mac",
+        `25` = "Alv Mac",
+        `26` = "Adipo",
+        `27` = "F420",
+        `28` = "Meso",
+        `29` = "Endo",
+        `30` = "SMC",
+        `31` = "Alv Mac",
+        `32` = "LowQ",
+        `33` = "LowQ")
+
+    b6_f420_combined$cell_type_final <- Idents(b6_f420_combined)
+
+    b6_f420_assignments <- data.frame(cell_type_final = b6_f420_combined$cell_type_final)
+    rownames(b6_f420_assignments) <- names(b6_f420_combined$cell_type_final)
+
+    qs::qsave(b6_f420_assignments, file = "misc/b6_f420_assignments.qs")
+}
+```
+
+### Create publication plots and save
+```{r b6_f420_4, dependson='b6_f420_3', eval=TRUE}
+# Remove tumor cells, low quality cells, and erythrocytes
+Idents(b6_f420_combined) <- b6_f420_combined$cell_type_final
+b6_f420_combined <- subset(b6_f420_combined,
+    idents = c("LowQ", "Erythro", "F420"),
+    invert = TRUE)
+
+# Plot and save
+r_dim_plot(b6_f420_combined, "F420 Stroma",
+    group.by = "cell_type_final",
+    split.by = "sample")
+
+ggsave("output/figures/combined_b6_f420.pdf",
+    width = 8,
+    height = 6)
+
+qs::qsave(b6_f420_combined, "output/rdata/b6_f420_combined.qs")
+```
+
+### Create frequency plots of stromal and immune cells
+```{r b6_f420_5, dependson='b6_f420_4', eval=TRUE}
+subset(b6_f420_combined,
+    idents = c("Mono", "Mac", "DC", "NK/T", "B", "Granulo", "Alv Mac"))@meta.data %>%
+    ggplot(aes(sample, fill = cell_type_final)) +
+        geom_bar(position = "fill") +
+        theme_classic()
+
+ggsave("output/figures/b6_immune.pdf",
+    width = 4,
+    height = 4)
+
+subset(b6_f420_combined,
+    idents = c(
+        "Endo",
+        "Peri",
+        "SMC",
+        "Fibroblast",
+        "Lower Airway",
+        "Upper Airway",
+        "Meso",
+        "Adipo")
+    )@meta.data %>%
+    ggplot(aes(sample, fill = cell_type_final)) +
+        geom_bar(position = "fill") +
+        theme_classic()
+
+ggsave("output/figures/b6_stroma.pdf",
+    width = 4,
+    height = 4)
+```
+
+## BALBC and K7M2
+```{r balbc_k7m2, dependson='load_raw', eval=TRUE}
+sobj_list <- qs::qread("output/rdata/sobj_list.qs")
+
+# Merge normal and tumor bearing lung for F420 and process into same UMAP space
+balb_k7m2_combined <- merge(sobj_list[["BALBC"]],
+        y = sobj_list[["K7M2"]],
+        add.cell.ids = c("BALBC", "K7M2")) %>%
+    SCTransform() %>%
+    RunPCA(npcs = 30) %>%
+    RunUMAP(dims = 1:30, seed.use = 111) %>%
+    FindNeighbors(k.param = 30, reduction = "umap", dims = 1:2) %>%
+    FindClusters(resolution  = 0.3)
+
+# Check identities from SingleR calls and other meta
+DimPlot(balb_k7m2_combined, group.by = "seurat_clusters", split.by = "sample", label = TRUE) +
+    coord_fixed() +
+    theme(legend.position = "none")
+DimPlot(balb_k7m2_combined, group.by = "cell_type", split.by = "sample", label = TRUE) +
+    coord_fixed() +
+    theme(legend.position = "none")
+r_feature_plot(balb_k7m2_combined, features = "cell_score", split.by = "sample") +
+    coord_fixed()
+r_feature_plot(balb_k7m2_combined, features = "nCount_RNA", split.by = "sample") +
+    coord_fixed()
+r_feature_plot(balb_k7m2_combined, features = "Col1a1", split.by = "sample") +
+    coord_fixed()
+r_feature_plot(balb_k7m2_combined, features = "Col1a2", split.by = "sample") +
+    coord_fixed()
+
+# Rename clusters based on the calls
+if(file.exists("misc/balb_k7m2_assignments.qs")) {
+    balb_k7m2_combined <- AddMetaData(balb_k7m2_combined,
+        qs::qread("misc/balb_k7m2_assignments.qs"))
+} else {
+    # This list is manually curated from the SingleR assignments and scores
+    # If run again, this needs to be checked for accuracy, as clusters may change
+    balb_k7m2_combined <- RenameIdents(balb_k7m2_combined,
+        `0` = "Alv Mac",
+        `1` = "Mac",
+        `2` = "Mac",
+        `3` = "Alv Mac",
+        `4` = "Endo",
+        `5` = "DC",
+        `6` = "B",
+        `7` = "NK/T",
+        `8` = "K7M2",
+        `9` = "Lower Airway",
+        `10` = "NK/T",
+        `11` = "K7M2",
+        `12` = "Granulo",
+        `13` = "Mono",
+        `14` = "Endo",
+        `15` = "Endo",
+        `16` = "NK/T",
+        `17` = "NK/T",
+        `18` = "Granulo",
+        `19` = "NK/T",
+        `20` = "Mac",
+        `21` = "Fibroblast",
+        `22` = "SMC",
+        `23` = "Upper Airway",
+        `24` = "Lower Airway",
+        `25` = "Alv Mac",
+        `26` = "Endo",
+        `27` = "Erythro",
+        `28` = "Adipo",
+        `29` = "Alv Mac",
+        `30` = "LowQ",
+        `31` = "DC",
+        `32` = "LowQ",
+        `33` = "LowQ",
+        `34` = "Peri")
+
+    balb_k7m2_combined$cell_type_final <- Idents(balb_k7m2_combined)
+
+    balb_k7m2_assignments <- data.frame(cell_type_final = balb_k7m2_combined$cell_type_final)
+    rownames(balb_k7m2_assignments) <- names(balb_k7m2_combined$cell_type_final)
+
+    qs::qsave(balb_k7m2_assignments, file = "misc/balb_k7m2_assignments.qs")
+}
+
+# Remove tumor cells, low quality cells, and erythrocytes
+Idents(balb_k7m2_combined) <- balb_k7m2_combined$cell_type_final
+balb_k7m2_combined <- subset(balb_k7m2_combined,
+    idents = c("LowQ", "Erythro", "K7M2"),
+    invert = TRUE)
+
+# Plot and save
+r_dim_plot(balb_k7m2_combined, "K7M2 Stroma",
+    group.by = "cell_type_final",
+    split.by = "sample")
+
+ggsave("output/figures/combined_balb_k7m2.pdf",
+    width = 8,
+    height = 6)
+
+qs::qsave(balb_k7m2_combined, "output/rdata/balb_k7m2_combined.qs")
+
+# Create frequency plots of stromal and immune cells
+subset(balb_k7m2_combined,
+    idents = c("Mono", "Mac", "DC", "NK/T", "B", "Granulo", "Alv Mac"))@meta.data %>%
+    ggplot(aes(sample, fill = cell_type_final)) +
+        geom_bar(position = "fill") +
+        theme_classic()
+
+ggsave("output/figures/balb_immune.pdf",
+    width = 4,
+    height = 4)
+
+subset(balb_k7m2_combined,
+    idents = c("Endo", "Peri", "SMC", "Fibroblast", "Lower Airway", "Upper Airway"))@meta.data %>%
+    ggplot(aes(sample, fill = cell_type_final)) +
+        geom_bar(position = "fill") +
+        theme_classic()
+
+ggsave("output/figures/balb_stroma.pdf",
+    width = 4,
+    height = 4)
+```
