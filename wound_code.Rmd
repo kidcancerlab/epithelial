@@ -1046,7 +1046,6 @@ test_annot <-
                          labels = list(brooke_annot$cell_typed),
                          aggr.ref = TRUE)
 tumor_only$brooke_cell_type <- test_annot$labels
-tumor_only$ryan_cell_type <-
 tumor_only$brooke_cell_score <-
     test_annot$scores %>%
     apply(MARGIN = 1, function(x) max(x, na.rm = TRUE))
