@@ -20,9 +20,6 @@ recurluster <- function(sobj,
     if (data_type == "RNA") {
         temp_sobj <-
             sobj %>%
-            SCTransform(vars.to.regress = "percent.mt",
-                        verbose = FALSE,
-                        return.only.var.genes = FALSE) %>%
             RunPCA(npcs = pc_num,
                    approx = FALSE,
                    verbose = FALSE,
@@ -62,6 +59,7 @@ recurluster <- function(sobj,
     } else {
         temp_sobj[[paste0("clust_", level)]] <-
             paste0(temp_sobj[[paste0("clust_", level - 1)]][, 1],
+                   ".",
                    temp_sobj$seurat_clusters)
     }
 
