@@ -65,7 +65,7 @@ gsea_out <-
 ```
 
 ## Plot GSEA output
-```{r gsea_plot, dependson='gsea_met_primary', eval=TRUE}
+```{r gsea_plot_met_primary, dependson='gsea_met_primary', eval=TRUE}
 top_paths <-
     gsea_out %>%
     group_by(cat_label, NES > 0) %>%
@@ -290,7 +290,7 @@ gsea_out_clust <-
 ```
 
 ## Plot GSEA output
-```{r gsea_plot, dependson='gsea_cmp_other_clusters', eval=TRUE}
+```{r gsea_plot_cmp_other_clusters, dependson='gsea_cmp_other_clusters', eval=TRUE}
 lapply(unique(gsea_out_clust$cat_label),
        function(x) {
     top_paths <-
