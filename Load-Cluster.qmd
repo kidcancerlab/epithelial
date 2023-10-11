@@ -179,19 +179,23 @@ qs::qsave(sobj_list, file = "output/rdata/sobj_list.qs")
 # Make up Seurat objects with subsets of the data
 
 ## B6 and F420
-```{r b6_f420, dependson='load_raw', eval=TRUE}
+### Create the merged tumor/normal object
+Process into a shared UMAP space
+```{r b6_f420_1, dependson='load_raw', eval=TRUE}
 sobj_list <- qs::qread("output/rdata/sobj_list.qs")
 
-# Merge normal and tumor bearing lung for F420 and process into same UMAP space
 b6_f420_combined <- merge(sobj_list[["C57BL6"]],
         y = sobj_list[["F420"]],
         add.cell.ids = c("C57BL6", "F420")) %>%
-    SCTransform() %>%
-    RunPCA(npcs = 30) %>%
-    RunUMAP(dims = 1:30, seed.use = 222) %>%
-    FindNeighbors(k.param = 30, reduction = "umap", dims = 1:2) %>%
-    FindClusters(resolution  = 0.3)
+    SCTransform(verbose = FALSE) %>%
+    RunPCA(npcs = 30, verbose = FALSE) %>%
+    RunUMAP(dims = 1:30, seed.use = 22, verbose = FALSE) %>%
+    FindNeighbors(k.param = 30, reduction = "umap", dims = 1:2, verbose = FALSE) %>%
+    FindClusters(resolution  = 0.3, verbose = FALSE)
+```
 
+### Inspect identities from SingleR calls and other meta
+```{r b6_f420_2, dependson='b6_f420_1', eval=TRUE}
 # Check identities from SingleR calls and other meta
 DimPlot(b6_f420_combined, group.by = "seurat_clusters", split.by = "sample", label = TRUE) +
     coord_fixed() +
@@ -207,8 +211,10 @@ r_feature_plot(b6_f420_combined, features = "Col1a1", split.by = "sample") +
     coord_fixed()
 r_feature_plot(b6_f420_combined, features = "Col1a2", split.by = "sample") +
     coord_fixed()
+```
 
-# Rename clusters based on the calls
+### Rename clusters based on the calls
+```{r b6_f420_3, dependson='b6_f420_1', eval=TRUE}
 if(file.exists("misc/b6_f420_assignments.qs")) {
     b6_f420_combined <- AddMetaData(b6_f420_combined,
         qs::qread("misc/b6_f420_assignments.qs"))
@@ -258,7 +264,10 @@ if(file.exists("misc/b6_f420_assignments.qs")) {
 
     qs::qsave(b6_f420_assignments, file = "misc/b6_f420_assignments.qs")
 }
+```
 
+### Create publication plots and save
+```{r b6_f420_4, dependson='b6_f420_3', eval=TRUE}
 # Remove tumor cells, low quality cells, and erythrocytes
 Idents(b6_f420_combined) <- b6_f420_combined$cell_type_final
 b6_f420_combined <- subset(b6_f420_combined,
@@ -275,8 +284,10 @@ ggsave("output/figures/combined_b6_f420.pdf",
     height = 6)
 
 qs::qsave(b6_f420_combined, "output/rdata/b6_f420_combined.qs")
+```
 
-# Create frequency plots of stromal and immune cells
+### Create frequency plots of stromal and immune cells
+```{r b6_f420_5, dependson='b6_f420_4', eval=TRUE}
 subset(b6_f420_combined,
     idents = c("Mono", "Mac", "DC", "NK/T", "B", "Granulo", "Alv Mac"))@meta.data %>%
     ggplot(aes(sample, fill = cell_type_final)) +
