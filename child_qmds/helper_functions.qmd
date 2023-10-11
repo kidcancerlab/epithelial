@@ -1,0 +1,43 @@
+
+## Functions to use for cell annotation
+```{r annotate_cells_fun}
+annot_cells <- function(sobject) {
+    cell_assign <- SingleR::SingleR(
+        as.SingleCellExperiment(sobject),
+        ref = list(GetAssayData(mouse_lung_ref), mouse_immune, mouse_rna),
+        labels = list(
+            mouse_lung_ref$cell_type,
+            mouse_immune$label.main,
+            mouse_rna$label.fine),
+        aggr.ref = TRUE)
+    sobject$cell_type <- cell_assign$labels
+    sobject$cell_score <- cell_assign$scores %>%
+        apply(MARGIN = 1, function(x) max(x, na.rm = TRUE))
+    return(sobject)
+}
+
+crazy_cols <- function(x, seed = 1337) {
+    set.seed(seed)
+    sample(rainbow(n = length(unique(x))))
+}
+
+calc_logfc <- function(sobj,
+                       group_var,
+                       group_1,
+                       group_2,
+                       epsilon = 1,
+                       assay = "SCT") {
+    all_obs_exp <-
+        AverageExpression(sobj,
+                          group.by = group_var,
+                          assays = assay)[[1]] %>%
+        as.data.frame()
+
+    log_fc <-
+        tibble(log_fc = log2((all_obs_exp[[group_1]] + epsilon) /
+                             (all_obs_exp[[group_2]] + epsilon)),
+               gene = rownames(all_obs_exp))
+
+    return(log_fc)
+}
+```

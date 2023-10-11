@@ -44,3 +44,5 @@ LungRefs/*
 
 # Local files and output
 output/*
+slurmOut
+input

@@ -1,0 +1,174 @@
+# Make a Seurat object of all the data
+```{r merge_all, dependson='load_raw', eval=TRUE}
+sobj_list <- qs::qread("output/rdata/sobj_list.qs")
+all_sobj <-
+    merge(sobj_list[[1]],
+          sobj_list[2:length(sobj_list)]) %>%
+    SCTransform(vars.to.regress = "percent.mt",
+                verbose = FALSE,
+                return.only.var.genes = FALSE) %>%
+    RunPCA(verbose = FALSE, assay = "SCT") %>%
+    FindNeighbors(verbose = FALSE) %>%
+    FindClusters(verbose = FALSE) %>%
+    RunUMAP(verbose = FALSE, dims = 1:30)
+
+qs::qsave(all_sobj,
+          file = "output/rdata/all_sobj.qs")
+
+all_dim <-
+    DimPlot(all_sobj,
+            group.by = c("obj_name", "cell_type"),
+            label = TRUE,
+            repel = TRUE,
+            cols = c(plot_cols, crazy_cols(all_sobj$cell_type, seed = 1341))) +
+    NoLegend()
+
+ggsave("output/figures/all_dim.pdf",
+       width = 25,
+       height = 8)
+```
+
+# Grab just macrophages and recursively cluster them
+```{r immune, dependson='merge_all', eval=TRUE}
+mac_types <-
+    c("Int Mf",
+      "Macrophages",
+      "Macrophages activated")
+
+Idents(all_sobj) <- "cell_type"
+
+# This brings in the recurluster function that recursively clusters the cells
+# using silhouette scoring
+source("scripts/recurl.R")
+
+immune_recurl <-
+    subset(all_sobj,
+           idents = mac_types) %>%
+    recurluster(parallel = TRUE,
+                do_plots = FALSE)
+
+immune_recurl <-
+    immune_recurl %>%
+    SCTransform(vars.to.regress = "percent.mt",
+                verbose = FALSE,
+                return.only.var.genes = FALSE) %>%
+    RunPCA(verbose = FALSE, assay = "SCT") %>%
+    FindNeighbors(verbose = FALSE) %>%
+    FindClusters(verbose = FALSE) %>%
+    RunUMAP(verbose = FALSE, dims = 1:30)
+
+qs::qsave(immune_recurl,
+          file = "output/rdata/immune_recurl.qs")
+```
+
+# Plot the macrophages
+```{r macs, dependson='immune', eval=TRUE}
+macs_dim <-
+    DimPlot(immune_recurl,
+            group.by = c("obj_name", "clust_1", "clust_2"),
+            label = TRUE,
+            repel = TRUE,
+            cols = c(plot_cols, crazy_cols(immune_recurl$clust_2, seed = 1341)))
+
+ggsave("output/figures/mac_dim2.pdf",
+       width = 25,
+       height = 8)
+
+cluster_counts <-
+    table(immune_recurl$obj_name, immune_recurl$clust_2) %>%
+    as.data.frame() %>%
+    dplyr::rename("Sample" = "Var1",
+                  "Cluster" = "Var2",
+                  "Count" = "Freq") %>%
+    group_by(Cluster) %>%
+    arrange(desc(Count), .by_group = TRUE) %>%
+    ggplot(aes(y = Cluster, x = Sample, fill = log10(Count))) +
+    geom_tile() +
+    geom_text(aes(label = Count), color = "white")
+
+ggsave("output/figures/mac_cluster_counts2.pdf",
+       width = 8,
+       height = 8)
+
+Idents(immune_recurl) <- "clust_2"
+```
+
+## Look at inflammatory genes in macs
+```{r macs_inflam, dependson='macs', eval=TRUE}
+inflam_genes <-
+    c("H2-Eb1", "H2-Ab1", "Cd86", "Il1a", "Il1b", "Cxcl1", "Cxcl2")
+
+anti_inflam_genes <-
+    c("Gpnmb", "Fabp5", "Anpep", "C1qa", "C1qb", "Fcrls", "Trem2", "Fn1", "Spp1")
+
+infl_macs <-
+    FeaturePlot(immune_recurl,
+                features = inflam_genes)
+
+ggsave("output/figures/mac_inflam.pdf",
+       width = 8,
+       height = 8,
+       plot = infl_macs)
+
+infl_macs_vln <-
+    VlnPlot(immune_recurl,
+            features = inflam_genes,
+            group.by = "clust_2",
+            cols = c(plot_cols, crazy_cols(immune_recurl$clust_2)),
+            pt.size = 0,
+            adjust = 0.5)
+
+ggsave("output/figures/mac_inflam_vln.pdf",
+       width = 15,
+       height = 8,
+       plot = infl_macs_vln)
+
+anti_imm_macs <-
+    FeaturePlot(immune_recurl,
+                features = anti_inflam_genes)
+
+ggsave("output/figures/mac_anti_inflam.pdf",
+       width = 8,
+       height = 8,
+       plot = anti_imm_macs)
+
+anti_imm_macs_vln <-
+    VlnPlot(immune_recurl,
+            features = anti_inflam_genes,
+            group.by = "clust_2",
+            cols = c(plot_cols, crazy_cols(immune_recurl$clust_2)),
+            pt.size = 0,
+            adjust = 0.5)
+
+ggsave("output/figures/mac_anti_inflam_vln.pdf",
+       width = 15,
+       height = 8,
+       plot = anti_imm_macs_vln)
+
+immune_recurl <-
+    AddModuleScore(immune_recurl,
+                   features = list(inflam_genes),
+                   name = "inflam_module")
+
+immune_recurl <-
+    AddModuleScore(immune_recurl,
+                   features = list(anti_inflam_genes),
+                   name = "anti_inflam_module")
+
+qs::qsave(immune_recurl,
+          file = "output/rdata/immune_recurl.qs")
+
+imm_mod_vln <-
+    VlnPlot(immune_recurl,
+            features = c("inflam_module1", "anti_inflam_module1"),
+            group.by = "clust_2",
+            ncol = 1,
+            cols = c(plot_cols, crazy_cols(immune_recurl$clust_2)),
+            pt.size = 0,
+            adjust = 0.5)
+
+ggsave("output/figures/mac_inflam_mod_vln.pdf",
+       width = 12,
+       height = 8,
+       plot = imm_mod_vln)
+```
