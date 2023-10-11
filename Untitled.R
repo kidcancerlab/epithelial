@@ -1,1 +1,0 @@
-"sentence from my computer"
