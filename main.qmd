@@ -76,3 +76,7 @@ Merged object saved to `output/rdata/all_sobj.qs`
 The subset macrophages from lung mets and primary tumors are saved to `output/rdata/immune_recurl.qs`
 
 {{< include child_qmds/Epithelial-Macs.qmd >}}
+
+## Run GSEA on the macrophage populations
+
+{{< include child_qmds/gsea_macs.qmd >}}
