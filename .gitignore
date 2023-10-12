@@ -49,4 +49,8 @@ input
 main_files
 geo_sub
 
+# Intermediate files for markdown rendering
 /.quarto/
+*_cache/
+*_files/
+*.rmarkdown

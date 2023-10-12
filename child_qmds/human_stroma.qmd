@@ -1,4 +1,87 @@
+# Load the normal human lung data
+GSE227136 contains a very large control normal lung dataset. We will extract normal lung scRNA-seq from this.
+
+The download will contain all of the lung sets (diseased and normal). We will keep only the healthy lung samples processed at TGen--these were not sorted like those processed at Vanderbilt, so match our datasets better. We will also keep only the never-smokers. This reduces our sample to the following list of sample names: THD0002, THD0006, THD0010, THD0014, VUHD69, VUHD076.
+
+NOTE: If you haven't already downloaded and processed, you might need to run this step on a himem node.
 
 ```{r}
+# Check to see if we've already downloaded and processed these files
+if(!file.exists("output/rdata/normal_lung.qs")) {
+    # Download the files
+    if(!dir.exists("GSE227136")) {
+        dir.create("GSE227136")
+    }
 
+    if(!file.exists("GSE227136/GSE227136.rds")) {
+        options(timeout = 1800)
+        download.file("https://ftp.ncbi.nlm.nih.gov/geo/series/GSE227nnn/GSE227136/suppl/GSE227136%5FILD%5Fall%5Fcelltypes%5FSeurat.rds.gz",
+            destfile = "GSE227136/GSE227136.rds.gz")
+        R.utils::gunzip("GSE227136/GSE227136.rds.gz")
+    }
+
+    # Make a list of the normal lung sample names
+    normal_names <- c("THD0002", "THD0006", "THD0010", "THD0014", "VUHD69", "VUHD076")
+
+    # Isolate the normal lung datasets
+    all_lung <- readRDS("GSE227136/GSE227136.rds")
+    all_lung <- SplitObject(all_lung, split.by = "Sample_Name")
+    normal_lung <- all_lung[normal_names]
+
+    qs::qsave(normal_lung, "output/rdata/normal_lung.qs")
+
+} else {
+
+    normal_lung <- qs::qread("output/rdata/normal_lung.qs")
+
+}
+```
+
+# Load the osteosarcoma lung metastases
+
+```{r}
+if(!file.exists("output/rdata/met_lungs.qs")) {
+    if(!dir.exists("GSE152048")) {
+        dir.create("GSE152048")
+    }
+
+    if(!dir.exists("GSE152048/BC10")) {
+        dir.create("GSE152048/BC10")
+        download.file("https://ftp.ncbi.nlm.nih.gov/geo/series/GSE152nnn/GSE152048/suppl/GSE152048%5FBC10.matrix.tar.gz",
+            destfile = "GSE152048/BC10/matrix.tar.gz")
+        untar("GSE152048/BC10/matrix.tar.gz",
+            exdir = "GSE152048",
+            extras = "--remove-files")
+    }
+
+    if(!dir.exists("GSE152048/BC17")) {
+        dir.create("GSE152048/BC17")
+        download.file("https://ftp.ncbi.nlm.nih.gov/geo/series/GSE152nnn/GSE152048/suppl/GSE152048%5FBC17.matrix.tar.gz",
+            destfile = "GSE152048/BC17/matrix.tar.gz")
+        untar("GSE152048/BC17/matrix.tar.gz",
+            exdir = "GSE152048",
+            extras = "--remove-files")
+    }
+}
+
+mets_meta <- tribble(
+    ~file, ~Sample_Name, ~Sample_Source, ~Sample_Type,
+    "/gpfs0/home2/gdrobertslab/lab/Counts/S0058/outs/filtered_feature_bc_matrix", "S0058", "Roberts Lab", "Metastasis",
+    "/gpfs0/home2/gdrobertslab/lab/Counts/S0059/outs/filtered_feature_bc_matrix", "S0059",  "Roberts Lab", "Metastasis",
+    "/gpfs0/home2/gdrobertslab/lab/Counts/S0217/filtered_feature_bc_matrix", "S0217", "Roberts Lab", "Metastasis",
+    "/gpfs0/home2/gdrobertslab/lab/Counts/S0218/filtered_feature_bc_matrix", "S0218", "Roberts Lab", "Metastasis",
+    "GSE152048/BC10", "BC10", "GSE152048", "Metastasis",
+    "GSE152048/BC17", "BC17", "GSE152048", "Metastasis"
+)
+
+met_lung <- mclapply(1:nrow(mets_meta),
+    function(m) {
+        message(paste("Starting to load", mets_meta$Sample_Name[m], "..."))
+        s <- tenx_load_qc(mets_meta$file[m])
+        s$Sample_Name <- mets_meta$Sample_Name[m]
+        s$Sample_Source <- mets_meta$Sample_Source[m]
+        s$Sample_Type <- mets_meta$Sample_Type[m]
+        message(paste(mets_meta$Sample_Name[m], "completed."))
+        return(s)
+    }, mc.cores = parallelly::availableCores())
 ```
