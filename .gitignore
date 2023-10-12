@@ -46,3 +46,5 @@ LungRefs/*
 output/*
 slurmOut
 input
+
+/.quarto/
