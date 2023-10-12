@@ -47,4 +47,8 @@ output/*
 slurmOut
 input
 
+# Intermediate files for markdown rendering
 /.quarto/
+*_cache/
+*_files/
+*.rmarkdown
