@@ -24,15 +24,18 @@ if(!file.exists("output/rdata/normal_lung.qs")) {
     normal_names <- c("THD0002", "THD0006", "THD0010", "THD0014", "VUHD69", "VUHD076")
 
     # Isolate the normal lung datasets
-    all_lung <- readRDS("GSE227136/GSE227136.rds")
-    all_lung <- SplitObject(all_lung, split.by = "Sample_Name")
-    normal_lung <- all_lung[normal_names]
-
+    normal_lung <- readRDS("GSE227136/GSE227136.rds")[normal_names]
+    normal_lung <- lapply(seq_along(normal_lung), function(i) {
+        DefaultAssay(normal_lung[[i]]) <- "RNA"
+        normal_lung[[i]] <- DietSeurat(normal_lung[[i]], assays = "RNA") %>%
+            NormalizeData()
+    })
     qs::qsave(normal_lung, "output/rdata/normal_lung.qs")
 
 } else {
 
     normal_lung <- qs::qread("output/rdata/normal_lung.qs")
+
 
 }
 ```
@@ -77,7 +80,8 @@ mets_meta <- tribble(
 met_lung <- mclapply(1:nrow(mets_meta),
     function(m) {
         message(paste("Starting to load", mets_meta$Sample_Name[m], "..."))
-        s <- tenx_load_qc(mets_meta$file[m])
+        s <- tenx_load_qc(mets_meta$file[m]) %>%
+            NormalizeData()
         s$id <- mets_meta$Sample_Name[m]
         s$src <- mets_meta$Sample_Source[m]
         s$type <- mets_meta$Sample_Type[m]
@@ -91,130 +95,134 @@ names(met_lung) <- mets_meta$Sample_Name
 # Find and exclude tumor cells from met samples
 
 ```{r}
-lung_ref <- qs::qread("LungRefs/normal_lung.qs")
-lung_ref$free_annotation <-
-    str_replace_all(lung_ref$free_annotation,
-        c("/" = "_", "\\+" = "_plus"))
-lung_ref$free_annotation <-
-    stringr::str_replace_all(lung_ref$free_annotation,
-        c("Alveolar Epithelial Type 1" = "Alveolar Epithelial",  #nolint
-            "Alveolar Epithelial Type 2" = "Alveolar Epithelial",  #nolint
-            "Basophil_Mast 1" = "Basophil_Mast",
-            "Basophil_Mast 2" = "Basophil_Mast",
-            "Bronchial Vessel 1" = "Bronchial Vessel",
-            "Bronchial Vessel 2" = "Bronchial Vessel",
-            "IGSF21_plus Dendritic" = "Dendritic cells",
-            "Myeloid Dendritic Type 1" = "Myeloid Dendritic",   #nolint
-            "Myeloid Dendritic Type 2" = "Myeloid Dendritic",   #nolint
-            "Natural Killer" = "NK cells",
-            "Natural Killer T" = "NKT",
-            "NK cells T" = "NKT",
-            "CD4_plus Memory/Effector T" = "CD4+ T cells",
-            "CD4_plus Naive T" = "CD4+ T cells",
-            "CD8_plus Memory_Effector T" = "CD8+ T cells",
-            "CD8_plus Naive T" = "CD8+ T cells",
-            "Proliferating NK_T" = "NKT",
-            "TREM2_plus Dendritic" = "Dendritic cells",
-            "Proliferating Macrophage" = "Macrophage",
-            "Nonclassical Monocyte" = "Monocytes",
-            "Classical Monocyte" = "Monocytes"))
+# lung_ref <- qs::qread("LungRefs/normal_lung.qs")
+# lung_ref$free_annotation <-
+#     str_replace_all(lung_ref$free_annotation,
+#         c("/" = "_", "\\+" = "_plus"))
+# lung_ref$free_annotation <-
+#     stringr::str_replace_all(lung_ref$free_annotation,
+#         c("Alveolar Epithelial Type 1" = "Alveolar Epithelial",  #nolint
+#             "Alveolar Epithelial Type 2" = "Alveolar Epithelial",  #nolint
+#             "Basophil_Mast 1" = "Basophil_Mast",
+#             "Basophil_Mast 2" = "Basophil_Mast",
+#             "Bronchial Vessel 1" = "Bronchial Vessel",
+#             "Bronchial Vessel 2" = "Bronchial Vessel",
+#             "IGSF21_plus Dendritic" = "Dendritic cells",
+#             "Myeloid Dendritic Type 1" = "Myeloid Dendritic",   #nolint
+#             "Myeloid Dendritic Type 2" = "Myeloid Dendritic",   #nolint
+#             "Natural Killer" = "NK cells",
+#             "Natural Killer T" = "NKT",
+#             "NK cells T" = "NKT",
+#             "CD4_plus Memory/Effector T" = "CD4+ T cells",
+#             "CD4_plus Naive T" = "CD4+ T cells",
+#             "CD8_plus Memory_Effector T" = "CD8+ T cells",
+#             "CD8_plus Naive T" = "CD8+ T cells",
+#             "Proliferating NK_T" = "NKT",
+#             "TREM2_plus Dendritic" = "Dendritic cells",
+#             "Proliferating Macrophage" = "Macrophage",
+#             "Nonclassical Monocyte" = "Monocytes",
+#             "Classical Monocyte" = "Monocytes"))
 
-annotate <- function(sobject,
-    aggr_ref = FALSE,
-    label_type = "label.main",
-    ...) {
-        hpca <- celldex::HumanPrimaryCellAtlasData()
-        hpca$label.main <-
-            stringr::str_replace_all(hpca$label.main,
-                c("T_cells" = "T cells",
-                "B_cell" = "B cells",
-                "NK_cell" = "NK cells",
-                "Monocyte" = "Monocytes",
-                "DC" = "Dendritic cells"))
-        huim <- celldex::MonacoImmuneData()
-        ref3 <- GetAssayData(lung_ref)
-        ref <- list(hpca, huim, ref3)
-        labels <- list(
-            hpca[[label_type]],
-            huim[[label_type]],
-            lung_ref$free_annotation)
-        annotation <-
-            SingleR::SingleR(test = Seurat::as.SingleCellExperiment(sobject),
-                ref = ref,
-                labels = labels,
-                aggr.ref = aggr_ref,
-                ...)
-        sobject$annotations <- annotation$labels
-        sobject$cell_scores <-
-            apply(X = annotation$scores,
-                MARGIN = 1,
-                function(x) max(x, na.rm = TRUE))
-        return(sobject)
-    }
+# annotate <- function(sobject,
+#     aggr_ref = FALSE,
+#     label_type = "label.main",
+#     ...) {
+#         hpca <- celldex::HumanPrimaryCellAtlasData()
+#         hpca$label.main <-
+#             stringr::str_replace_all(hpca$label.main,
+#                 c("T_cells" = "T cells",
+#                 "B_cell" = "B cells",
+#                 "NK_cell" = "NK cells",
+#                 "Monocyte" = "Monocytes",
+#                 "DC" = "Dendritic cells"))
+#         huim <- celldex::MonacoImmuneData()
+#         ref3 <- GetAssayData(lung_ref)
+#         ref <- list(hpca, huim, ref3)
+#         labels <- list(
+#             hpca[[label_type]],
+#             huim[[label_type]],
+#             lung_ref$free_annotation)
+#         annotation <-
+#             SingleR::SingleR(test = Seurat::as.SingleCellExperiment(sobject),
+#                 ref = ref,
+#                 labels = labels,
+#                 aggr.ref = aggr_ref,
+#                 ...)
+#         sobject$annotations <- annotation$labels
+#         sobject$cell_scores <-
+#             apply(X = annotation$scores,
+#                 MARGIN = 1,
+#                 function(x) max(x, na.rm = TRUE))
+#         return(sobject)
+#     }
 
-met_lung <- mclapply(seq_along(met_lung), function(s) {
-    message(paste("Starting sample", names(met_lung)[s], "..."))
-    o <- process_seurat(met_lung[[s]]) %>%
-        annotate()
-    return(o)
-    message(paste("Completed", names(met_lung)[s], "."))
-}, mc.cores = parallelly::availableCores())
+# met_lung <- mclapply(seq_along(met_lung), function(s) {
+#     message(paste("Starting sample", names(met_lung)[s], "..."))
+#     o <- process_seurat(met_lung[[s]]) %>%
+#         annotate()
+#     return(o)
+#     message(paste("Completed", names(met_lung)[s], "."))
+# }, mc.cores = parallelly::availableCores())
 
-qs::qsave(met_lung, "output/rdata/met_lung_annotated.qs")
+# qs::qsave(met_lung, "output/rdata/met_lung_annotated.qs")
 
-plots <- lapply(seq_along(met_lung), function(i) {
-    p1 <- r_dim_plot(met_lung[[i]], names(met_lung)[i])
-    p2 <- r_feature_plot(met_lung[[i]], "cell_scores")
-    p3 <- r_feature_plot(met_lung[[i]], "COL1A1")
-    p4 <- r_feature_plot(met_lung[[i]], "SPP1")
-    p5 <- r_feature_plot(met_lung[[i]], "nCount_RNA")
-    p6 <- DimPlot(met_lung[[i]], label = TRUE, group.by = "annotations") +
-        theme(legend.position = "none") +
-        coord_fixed()
-    p <- (p1 | p6 | p2) / (p3 | p4 | p5)
-    met_lung[[i]]$tumor <- "stroma"
-    return(p)
+# plots <- lapply(seq_along(met_lung), function(i) {
+#     p1 <- r_dim_plot(met_lung[[i]], names(met_lung)[i])
+#     p2 <- r_feature_plot(met_lung[[i]], "cell_scores")
+#     p3 <- r_feature_plot(met_lung[[i]], "COL1A1")
+#     p4 <- r_feature_plot(met_lung[[i]], "SPP1")
+#     p5 <- r_feature_plot(met_lung[[i]], "nCount_RNA")
+#     p6 <- DimPlot(met_lung[[i]], label = TRUE, group.by = "annotations") +
+#         theme(legend.position = "none") +
+#         coord_fixed()
+#     p <- (p1 | p6 | p2) / (p3 | p4 | p5)
+#     return(p)
+# })
+
+# # Code for manual curation. Designed for interactive review of plots.
+# i = 6
+# met_lung[[i]]$tumor <- "stroma"
+# plots[[i]]
+
+# # Use this code, changing cluster numbers, to designate tumor cells.
+# met_lung[[i]]$tumor[met_lung[[i]]$seurat_clusters == 9] <- "tumor"
+
+# # Check result of tumor designation and save a list of tumor assignments.
+# r_dim_plot(met_lung[[i]], "Tumor vs. Stroma", group.by = "tumor")
+# qs::qsave(met_lung[[i]]$tumor,
+#     paste0("misc/", names(met_lung)[i], "-tumor_assignments.qs"))
+
+# Separate the tumor cells from the lung stroma
+met_stroma <- lapply(seq_along(met_lung), function (i) {
+    met_lung[[i]]$tumor <- qs::qread(file = paste0(
+        "misc/",
+        names(met_lung)[i],
+        "-tumor_assignments.qs"))
+    s <- subset(met_lung[[i]], tumor == "stroma")
+    return(s)
 })
 
-# Code for manual curation. Designed for interactive review of plots.
-i = 1
-plots[[1]]
-
-# Use this code, changing cluster numbers, to designate tumor cells.
-met_lung[[i]]$tumor[met_lung[[i]]$seurat_clusters == 9] <- "tumor"
-
-# Check result of tumor designation and save a list of tumor assignments.
-r_dim_plot(met_lung[[i]], "Tumor vs. Stroma", group.by = "tumor")
-qs::qsave(met_lung[[i]]$tumor,
-    paste0("misc/", names(met_lung)[i], "-tumor_assignments.qs"))
+names(met_stroma) <- names(met_lung)
 ```
 
 # Combine datasets from normal and met
 
 ```{r}
-normal_lung <- merge(normal_lung[[1]],
-    normal_lung[2:length(normal_lung)],
-    add.cell.ids = names(normal_lung))
+# Adjust names of some meta to match our lab standards and simplify
+for(i in seq_along(normal_lung)) {
+    normal_lung[[i]]$id <- normal_lung[[i]]$Sample_Name
+    normal_lung[[i]]$src <- normal_lung[[i]]$Sample_Source
+    normal_lung[[i]]$type <- normal_lung[[i]]$Sample_Type
+    normal_lung[[i]]$method <- "cell"
+    normal_lung[[i]]@meta.data <- normal_lung[[i]]@meta.data %>%
+        select(nCount_RNA, nFeature_RNA, percent.mt, id, src, type, method,
+        manual_annotation_1, annotation_level_1, annotation_level_2, lineage)
+}
 
-# Adjust names of some meta to match our lab standards
-normal_lung$id <- normal_lung$Sample_Name
-normal_lung$src <- normal_lung$Sample_Source
-normal_lung$type <- normal_lung$Sample_Type
-normal_lung$method <- "cell"
-
-# Simplify meta before merge
-normal_lung@meta.data <- normal_lung@meta.data %>%
-    select(nCount_RNA, nFeature_RNA, percent.mt, id, src, type, method,
-    manual_annotation_1, annotation_level_1, annotation_level_2, lineage)
-
-met_lung <- merge(met_lung[[1]],
-    met_lung[2:length(met_lung)],
-    add.cell.ids = names(met_lung))
-
-lungs <- merge(normal_lung, met_lung) %>%
-    NormalizeData() %>%
-    FindVariableFeatures() %>%
-    ScaleData() %>%
+# Merge the normal and metastatic lung data into a single object
+lungs <- merge(normal_lung[[1]],
+        c(normal_lung[2:length(normal_lung)], met_stroma),
+        add.cell.ids = c(names(normal_lung), names(met_stroma))) %>%
     RunPCA(npcs = 30, verbose = FALSE) %>%
     harmony::RunHarmony(group.by.vars = c("id")) %>%
     RunUMAP(reduction = "harmony", dims = 1:30) %>%
@@ -222,7 +230,7 @@ lungs <- merge(normal_lung, met_lung) %>%
     FindClusters(resolution = 0.1)
 
 DimPlot(lungs, group.by = "id", split.by = "type")
-r_feature_plot(met_lung, "COL1A1", split.by = "type")
+r_feature_plot(met_stroma, "COL1A1", split.by = "type")
 ```
 
 
