@@ -24,18 +24,18 @@ if(!file.exists("output/rdata/normal_lung.qs")) {
     normal_names <- c("THD0002", "THD0006", "THD0010", "THD0014", "VUHD69", "VUHD076")
 
     # Isolate the normal lung datasets
-    normal_lung <- readRDS("GSE227136/GSE227136.rds")[normal_names]
-    normal_lung <- lapply(seq_along(normal_lung), function(i) {
-        DefaultAssay(normal_lung[[i]]) <- "RNA"
-        normal_lung[[i]] <- DietSeurat(normal_lung[[i]], assays = "RNA") %>%
-            NormalizeData()
-    })
+    normal_lung <- readRDS("GSE227136/GSE227136.rds") %>%
+        subset(Sample_Name %in% normal_names)
+    DefaultAssay(normal_lung) <- "RNA"
+    normal_lung <- DietSeurat(normal_lung, assays = "RNA") %>%
+        NormalizeData() %>%
+        SplitObject(split.by = "Sample_Name")
+
     qs::qsave(normal_lung, "output/rdata/normal_lung.qs")
 
 } else {
 
     normal_lung <- qs::qread("output/rdata/normal_lung.qs")
-
 
 }
 ```
@@ -80,7 +80,7 @@ mets_meta <- tribble(
 met_lung <- mclapply(1:nrow(mets_meta),
     function(m) {
         message(paste("Starting to load", mets_meta$Sample_Name[m], "..."))
-        s <- tenx_load_qc(mets_meta$file[m]) %>%
+        s <- tenx_load_qc(mets_meta$file[m], violin_plot = FALSE) %>%
             NormalizeData()
         s$id <- mets_meta$Sample_Name[m]
         s$src <- mets_meta$Sample_Source[m]
@@ -223,6 +223,8 @@ for(i in seq_along(normal_lung)) {
 lungs <- merge(normal_lung[[1]],
         c(normal_lung[2:length(normal_lung)], met_stroma),
         add.cell.ids = c(names(normal_lung), names(met_stroma))) %>%
+    FindVariableFeatures() %>%
+    ScaleData() %>%
     RunPCA(npcs = 30, verbose = FALSE) %>%
     harmony::RunHarmony(group.by.vars = c("id")) %>%
     RunUMAP(reduction = "harmony", dims = 1:30) %>%
