@@ -234,22 +234,51 @@ lungs <- merge(normal_lung[[1]],
     harmony::RunHarmony(group.by.vars = c("id")) %>%
     RunUMAP(reduction = "harmony", dims = 1:30) %>%
     FindNeighbors(reduction = "harmony") %>%
-    FindClusters(resolution = 0.1) %>%
-    annotate(BPPARAM = param)
+    FindClusters(resolution = 0.4)
 
 qs::qsave(lungs, "output/rdata/integrated_lungs_sct.qs")
 
 r_dim_plot(lungs, group.by = "id", split.by = "type", shuffle = TRUE)
 r_dim_plot(lungs, "Integrated Stroma")
-r_dim_plot(lungs, group.by = "")
 DimPlot(lungs, group.by = "annotations", label = TRUE) + theme(legend.position = "none")
 
-# Label clusters by most frequent assignment
-assign_table <- lungs@meta.data %>%
-    select(seurat_clusters, annotations) %>%
-    group_by(seurat_clusters, annotations) %>%
-    summarise(n = n()) %>%
-    arrange(seurat_clusters, -n)
+# Perform a semi-automated, manually verified cell type assignment
+if(!file.exists("misc/lungs_manual_assignment.qs")) {
+    lungs <- annotate(lungs, BPPARAM = param)
+
+    assign_table <- lungs@meta.data %>%
+        select(seurat_clusters, annotations) %>%
+        group_by(seurat_clusters, annotations) %>%
+        summarise(n = n()) %>%
+        arrange(seurat_clusters, -n)
+
+    lungs <- RenameIdents(lungs,
+        `0` = "T/NK",
+        `1` = "Macrophage",
+        `2` = "Macrophage",
+        `3` = "T/NK",
+        `4` = "Distal Airway",
+        `5` = "Fibroblast",
+        `6` = "Distal Airway",
+        `7` = "Endothelial",
+        `8` = "Macrophage",
+        `9` = "Granulocyte",
+        `10` = "B",
+        `11` = "Macrophage",
+        `12` = "B",
+        `13` = "Endothelial",
+        `14` = "Distal Airway",
+        `15` = "Dendritic",
+        `16` = "Proximal Airway")
+
+    r_dim_plot(lungs, "Manual Assignments")
+    lungs$manual_assignments <- Idents(lungs)
+    qs::qsave(lungs$manual_assignments, "misc/lungs_manual_assignment.qs")
+
+}
+
+
+
 ```
 
 
