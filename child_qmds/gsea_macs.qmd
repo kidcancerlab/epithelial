@@ -1,0 +1,316 @@
+# Define pathway categories
+```{r pathway_categories, eval=TRUE}
+cat_tib <-
+    tribble(~category,          ~subcat,    ~label,
+            "C2",               "CP:KEGG",  "KEGG",
+            "C3",               "TFT:GTRD", "Transcription factors",
+            "C5",               "GO:BP",    "GO Biological Process",
+            "C5",               "GO:MF",    "GO Molecular Function",
+            "C8",               "",         "Cell type")
+```
+
+# Run GSEA on all macs between primary and met
+```{r just_tumor_macs}
+immune_recurl <- qs::qread("output/rdata/immune_recurl.qs")
+
+tumor_only <-
+    subset(immune_recurl,
+           obj_name %in% c("K7M2", "F420", "tibia_F420", "tibia_K7M2"))
+
+tumor_only$comp <-
+    if_else(tumor_only$obj_name == "tibia_F420" |
+            tumor_only$obj_name == "tibia_K7M2",
+            "Primary",
+            "Met")
+
+qs::qsave(tumor_only,
+          file = "output/rdata/macs_tumor_only.qs")
+```
+
+## Calculate logfc using same method as Seurat
+This is much faster than FindMarkers() and gives the same results
+```{r gsea_met_primary, dependson='just_tumor_macs', eval=TRUE}
+prim_met_logfc <-
+    calc_logfc(tumor_only,
+               group_var = "comp",
+               group_1 = "Primary",
+               group_2 = "Met") %>%
+    arrange(desc(log_fc)) %>%
+    pull(log_fc, name = gene)
+
+gsea_out <-
+    parallel::mclapply(seq_len(nrow(cat_tib)),
+                       mc.cores = 5,
+                       function(i) {
+        message(cat_tib$label[i])
+        kegg_ref <-
+            msigdbr::msigdbr(species = "Mus musculus",
+                            category = cat_tib$category[i],
+                            subcategory = cat_tib$subcat[i]) %>%
+                split(x = .$gene_symbol, f = .$gs_name)
+
+        fgsea::fgseaMultilevel(kegg_ref,
+                               prim_met_logfc,
+                               minSize = 15,
+                               maxSize = 500,
+                               nPerm = 1000) %>%
+            arrange(desc(NES)) %>%
+            mutate(pathway = str_replace_all(pathway, "_", " "),
+                   category = cat_tib$category[i],
+                   sub_cat = cat_tib$subcat[i],
+                   cat_label = cat_tib$label[i]) %>%
+            filter(padj < 0.05)
+    }) %>%
+    bind_rows()
+```
+
+## Plot GSEA output
+```{r gsea_plot_met_primary, dependson='gsea_met_primary', eval=TRUE}
+top_paths <-
+    gsea_out %>%
+    group_by(cat_label, NES > 0) %>%
+    arrange(desc(abs(NES)), .by_group = TRUE) %>%
+    slice_head(n = 10) %>%
+    pull(pathway) %>%
+    str_wrap(width = 80)
+
+gsea_dots <-
+    gsea_out %>%
+    filter(pathway %in% top_paths) %>%
+    mutate(pathway = fct_reorder(pathway, NES)) %>%
+    ggplot(aes(y = pathway,
+               x = NES,
+               size = -log10(padj))) +
+    geom_point() +
+    theme(axis.text.y = element_text(size = 4))
+
+ggsave("output/figures/gsea_dots_macs_prim_met.pdf",
+       width = 8,
+       height = 15,
+       plot = gsea_dots)
+```
+
+# GSEA comparing met to primary for each cluster
+
+## Calculate logfc between met and primary for each cluster
+```{r met_primary_logfc, eval=TRUE}
+min_cell_comp <- 10
+all_logfc <-
+    sapply(unique(tumor_only$clust_2),
+           USE.NAMES = TRUE,
+           function(x) {
+        test_data <-
+            subset(tumor_only,
+                   clust_2 == x)
+
+        if (min(table(test_data$comp)) > min_cell_comp &&
+            length(unique(test_data$comp)) == 2) {
+            output <-
+                calc_logfc(test_data,
+                            group_var = "comp",
+                            group_1 = "Primary",
+                            group_2 = "Met") %>%
+                arrange(desc(log_fc)) %>%
+                pull(log_fc, name = gene)
+        } else {
+            output <- NULL
+        }
+        return(output)
+    })
+
+all_logfc <- all_logfc[!all_logfc %in% list(NULL)]
+```
+
+## Run the GSEA
+```{r met_primary_gsea, dependson='met_primary_logfc', eval=TRUE}
+set.seed(1337)
+
+gsea_out <-
+    parallel::mclapply(seq_len(nrow(cat_tib)),
+                       mc.cores = 5,
+                       function(i) {
+        message(cat_tib$label[i])
+        kegg_ref <-
+            msigdbr::msigdbr(species = "Mus musculus",
+                            category = cat_tib$category[i],
+                            subcategory = cat_tib$subcat[i]) %>%
+                split(x = .$gene_symbol, f = .$gs_name)
+
+            parallel::mclapply(names(all_logfc),
+                            mc.cores = 5,
+                            function(x) {
+                fgsea::fgseaMultilevel(kegg_ref,
+                                       all_logfc[[x]],
+                                       minSize = 15,
+                                       maxSize = 500,
+                                       nPerm = 1000) %>%
+                    arrange(desc(NES)) %>%
+                    mutate(pathway = str_replace_all(pathway, "_", " "),
+                           cluster = x,
+                           category = cat_tib$category[i],
+                           sub_cat = cat_tib$subcat[i],
+                           cat_label = cat_tib$label[i]) %>%
+                    filter(padj < 0.05)
+            }) %>%
+            bind_rows()
+    }) %>%
+    bind_rows()
+```
+
+## Plot met-primary GSEA output
+```{r met_primary_plot, dependson='met_primary_gsea', eval=TRUE}
+lapply(unique(gsea_out$cat_label),
+       function(x) {
+    top_paths <-
+        gsea_out %>%
+        filter(cat_label == x) %>%
+        group_by(cluster) %>%
+        arrange(desc(abs(NES)), .by_group = TRUE) %>%
+        slice_head(n = 20) %>%
+        pull(pathway) %>%
+        str_wrap(width = 80)
+    gsea_out %>%
+        filter(pathway %in% top_paths) %>%
+        pivot_wider(names_from = pathway,
+                    values_from = NES,
+                    id_cols = c(cluster),
+                    values_fill = 0) %>%
+        column_to_rownames("cluster") %>%
+        t() %>%
+        pheatmap::pheatmap(main = x,
+                           filename = paste0("output/figures/gsea_",
+                                             x,
+                                             ".pdf"),
+                           width = 8,
+                           height = 12,
+                           fontsize_row = 6)
+    })
+```
+
+# Confirm directionality of genes from GSEA output
+Make plot to make sure I have the directionality of the DE genes correct
+```{r kegg_ribo, dependson='load_raw', eval=TRUE}
+kegg_ribo_genes <-
+    msigdbr::msigdbr(species = "Mus musculus",
+                     category = "C2",
+                     subcategory = "KEGG") %>%
+    filter(gs_name == "KEGG_RIBOSOME") %>%
+    split(x = .$gene_symbol, f = .$gs_name)
+
+tumor_only <-
+    AddModuleScore(tumor_only,
+                   features = kegg_ribo_genes,
+                   name = "kegg_ribo_module")
+
+tumor_only %>%
+    subset(clust_2 %in% c("clust_2.0", #high
+                          "clust_2.1", #high
+                          "clust_0.1", #low
+                          "clust_5.1")) %>% #low
+    VlnPlot(split.by = "sample",
+            features = "kegg_ribo_module1",
+            group.by = "clust_2")
+
+FeaturePlot(immune_recurl,
+            features = kegg_ribo_genes[[1]])
+
+tumor_only %>%
+    AddMetaData(metadata = paste(tumor_only$clust_2, tumor_only$comp),
+                col.name = "clust_comp") %>%
+    subset(clust_2 %in% c("clust_2.0", #high
+                          "clust_2.1", #high
+                          "clust_0.1", #low
+                          "clust_5.1")) %>% #low
+    DotPlot(features =  unique(kegg_ribo_genes[[1]]),
+            group.by = "clust_comp")
+```
+
+# Run GSEA to compare each cluster to all others
+
+## Calculate logfc between each cluster and all others
+```{r logfc_cmp_other_clusters, dependson='load_raw', eval=TRUE}
+all_logfc_clust <-
+    sapply(unique(tumor_only$clust_2),
+           USE.NAMES = TRUE,
+           function(x) {
+        test_data <- tumor_only
+        test_data$comp <-
+            if_else(test_data$clust_2 == x,
+                    x,
+                    "other")
+
+        output <-
+            calc_logfc(test_data,
+                        group_var = "comp",
+                        group_1 = x,
+                        group_2 = "other") %>%
+            arrange(desc(log_fc)) %>%
+            pull(log_fc, name = gene)
+        return(output)
+    })
+```
+
+## Run the GSEA
+```{r gsea_cmp_other_clusters, dependson='logfc_cmp_other_clusters', eval=TRUE}
+set.seed(1337)
+gsea_out_clust <-
+    parallel::mclapply(seq_len(nrow(cat_tib)),
+                       mc.cores = 5,
+                       function(i) {
+        message(cat_tib$label[i])
+        kegg_ref <-
+            msigdbr::msigdbr(species = "Mus musculus",
+                            category = cat_tib$category[i],
+                            subcategory = cat_tib$subcat[i]) %>%
+                split(x = .$gene_symbol, f = .$gs_name)
+
+            parallel::mclapply(names(all_logfc),
+                            mc.cores = 5,
+                            function(x) {
+                fgsea::fgseaMultilevel(kegg_ref,
+                                       all_logfc[[x]],
+                                       minSize = 15,
+                                       maxSize = 500,
+                                       nPerm = 1000) %>%
+                    arrange(desc(NES)) %>%
+                    mutate(pathway = str_replace_all(pathway, "_", " "),
+                           cluster = x,
+                           category = cat_tib$category[i],
+                           sub_cat = cat_tib$subcat[i],
+                           cat_label = cat_tib$label[i]) %>%
+                    filter(padj < 0.05)
+            }) %>%
+            bind_rows()
+    }) %>%
+    bind_rows()
+```
+
+## Plot GSEA output
+```{r gsea_plot_cmp_other_clusters, dependson='gsea_cmp_other_clusters', eval=TRUE}
+lapply(unique(gsea_out_clust$cat_label),
+       function(x) {
+    top_paths <-
+        gsea_out_clust %>%
+        filter(cat_label == x) %>%
+        group_by(cluster) %>%
+        arrange(desc(abs(NES)), .by_group = TRUE) %>%
+        slice_head(n = 20) %>%
+        pull(pathway) %>%
+        str_wrap(width = 80)
+    gsea_out_clust %>%
+        filter(pathway %in% top_paths) %>%
+        pivot_wider(names_from = pathway,
+                    values_from = NES,
+                    id_cols = c(cluster),
+                    values_fill = 0) %>%
+        column_to_rownames("cluster") %>%
+        t() %>%
+        pheatmap::pheatmap(main = x,
+                           filename = paste0("output/figures/gsea_by_cluster_",
+                                             x,
+                                             ".pdf"),
+                           width = 8,
+                           height = 12,
+                           fontsize_row = 6)
+    })
+```

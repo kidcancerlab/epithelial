@@ -1,0 +1,76 @@
+### Get cell type reference datasets
+Reference data from GEO#GSE151974
+```{r mouse_refs}
+ref_path <- "/home/gdrobertslab/lab/GenRef/sc_ref_datasets/mouse"
+mouse_lung_ref <- qs::qread(paste0(ref_path, "/GSE151974/mouse_lung_ref.qs"))
+mouse_immune <- celldex::ImmGenData()
+
+# This label is not informative
+mouse_immune <-
+    mouse_immune[mouse_immune$label.main != "Stromal cells", ]
+
+mouse_rna <- celldex::MouseRNAseqData()
+```
+
+# Load raw data and suggest cell type
+```{r load_raw, cache.vars = '', eval=TRUE}
+sample_list <- read_tsv("misc/sample_cutoffs.txt", show_col_types = FALSE)
+
+end_path <- "/filtered_feature_bc_matrix"
+if (grepl("r1pl", Sys.info()[["nodename"]])) {
+    data_path <- "/home/gdrobertslab/lab/Counts/"
+    path_use <- "cluster_path"
+} else {
+    data_path <- "/Applications/scRNA_seq raw files/"
+    path_use <- "James_path"
+}
+
+sobj_list <- parallel::mclapply(seq_len(nrow(sample_list)),
+    mc.cores = parallelly::availableCores(),
+    function(i) {
+        obj_name <- sample_list$obj_name[i]
+        message(obj_name)
+
+        sobj <- tenx_load_qc(
+            paste0(data_path,sample_list[[path_use]][i], end_path),
+            min_cells = 3,
+            min_features = 200,
+            violin_plot = FALSE)
+
+        # Add metadata to dataset
+        for (colname in colnames(sample_list)) {
+            sobj[[colname]] <- sample_list[[colname]][i]
+        }
+
+        # Add sample name to dataset
+        sobj$sample <- obj_name
+
+        cutoff_table <-
+            tribble(~"feature",   ~"min_val",                    ~"max_val",
+                    "nCount_RNA", sample_list$ncount_rna_min[i], sample_list$ncount_rna_max[i],
+                    "percent.mt", 0,                             sample_list$mt_max[i])
+
+        plotted <- feature_hist(
+            sobj,
+            features = c("nCount_RNA", "percent.mt"),
+            cutoff_table = cutoff_table)
+
+        ggsave(paste0("output/figures/feature_hist_", obj_name, ".png"),
+            width = 10,
+            height = 10,
+            plot = plotted)
+
+        sobj <- sobj %>%
+            subset(nCount_RNA   >= sample_list$ncount_rna_min[i] &
+                nCount_RNA   <= sample_list$ncount_rna_max[i] &
+                percent.mt   <= sample_list$mt_max[i]) %>%
+            process_seurat()
+
+        sobj <- annot_cells(sobj)
+        return(sobj)
+})
+
+names(sobj_list) <- sample_list$obj_name
+
+qs::qsave(sobj_list, file = "output/rdata/sobj_list.qs")
+```

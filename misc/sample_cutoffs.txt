@@ -3,3 +3,5 @@ S0066	C57BL6	0	50000	20	B6 Ctl lung	sc k7m2 f420/S0066-B6-Ctl-lung	S0066
 S0068	F420	0	50000	20	F420 Epcam enriched mets	sc k7m2 f420/S0068-F420-Epcam-enriched-mets use this	S0068
 S0074	BALBC	0	25000	20	Balb C Ctl lung	sc k7m2 f420/S0074-Balb-C-Ctl-lung	S0074-Balb-C-Ctl-lung/outs
 S0075	K7M2	0	75000	20	Balb C K7M2 Epcam enriched	sc k7m2 f420/S0075-Balb-C-K7M2-Epcam-enriched	S0075-Balb-C-K7M2-Epcam-enriched/outs
+S0104	tibia_F420	0	50000	20	F420 primary tumor in tibia	NA	S0104
+S0105	tibia_K7M2	0	100000	20	K7M2-RFP tibia tumor	NA	S0105

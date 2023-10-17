@@ -1,0 +1,139 @@
+## B6 and F420
+### Create the merged tumor/normal object
+Process into a shared UMAP space
+```{r b6_f420_1, dependson='load_raw', eval=TRUE}
+sobj_list <- qs::qread("output/rdata/sobj_list.qs")
+
+b6_f420_combined <- merge(sobj_list[["C57BL6"]],
+        y = sobj_list[["F420"]],
+        add.cell.ids = c("C57BL6", "F420")) %>%
+    SCTransform(verbose = FALSE) %>%
+    RunPCA(npcs = 30, verbose = FALSE) %>%
+    RunUMAP(dims = 1:30, seed.use = 22, verbose = FALSE) %>%
+    FindNeighbors(k.param = 30, reduction = "umap", dims = 1:2, verbose = FALSE) %>%
+    FindClusters(resolution  = 0.3, verbose = FALSE)
+```
+
+### Inspect identities from SingleR calls and other meta
+```{r b6_f420_2, dependson='b6_f420_1', eval=TRUE}
+# Check identities from SingleR calls and other meta
+DimPlot(b6_f420_combined, group.by = "seurat_clusters", split.by = "sample", label = TRUE) +
+    coord_fixed() +
+    theme(legend.position = "none")
+DimPlot(b6_f420_combined, group.by = "cell_type", split.by = "sample", label = TRUE) +
+    coord_fixed() +
+    theme(legend.position = "none")
+r_feature_plot(b6_f420_combined, features = "cell_score", split.by = "sample") +
+    coord_fixed()
+r_feature_plot(b6_f420_combined, features = "nCount_RNA", split.by = "sample") +
+    coord_fixed()
+r_feature_plot(b6_f420_combined, features = "Col1a1", split.by = "sample") +
+    coord_fixed()
+r_feature_plot(b6_f420_combined, features = "Col1a2", split.by = "sample") +
+    coord_fixed()
+```
+
+### Rename clusters based on the calls
+```{r b6_f420_3, dependson='b6_f420_1', eval=TRUE}
+if(file.exists("misc/b6_f420_assignments.qs")) {
+    b6_f420_combined <- AddMetaData(b6_f420_combined,
+        qs::qread("misc/b6_f420_assignments.qs"))
+} else {
+    # This list is manually curated from the SingleR assignments and scores
+    # If run again, this needs to be checked for accuracy, as clusters may change
+    b6_f420_combined <- RenameIdents(b6_f420_combined,
+        `0` = "Endo",
+        `1` = "Alv Mac",
+        `2` = "Mac",
+        `3` = "Mac",
+        `4` = "Alv Mac",
+        `5` = "Mac",
+        `6` = "Endo",
+        `7` = "NK/T",
+        `8` = "Fibroblast",
+        `9` = "F420",
+        `10` = "B",
+        `11` = "Mac",
+        `12` = "NK/T",
+        `13` = "Lower Airway",
+        `14` = "Upper Airway",
+        `15` = "Mono",
+        `16` = "F420",
+        `17` = "Upper Airway",
+        `18` = "Granulo",
+        `19` = "DC",
+        `20` = "DC",
+        `21` = "Erythro",
+        `22` = "DC",
+        `23` = "Peri",
+        `24` = "Mac",
+        `25` = "Alv Mac",
+        `26` = "Adipo",
+        `27` = "F420",
+        `28` = "Meso",
+        `29` = "Endo",
+        `30` = "SMC",
+        `31` = "Alv Mac",
+        `32` = "LowQ",
+        `33` = "LowQ")
+
+    b6_f420_combined$cell_type_final <- Idents(b6_f420_combined)
+
+    b6_f420_assignments <- data.frame(cell_type_final = b6_f420_combined$cell_type_final)
+    rownames(b6_f420_assignments) <- names(b6_f420_combined$cell_type_final)
+
+    qs::qsave(b6_f420_assignments, file = "misc/b6_f420_assignments.qs")
+}
+```
+
+### Create publication plots and save
+```{r b6_f420_4, dependson='b6_f420_3', eval=TRUE}
+# Remove tumor cells, low quality cells, and erythrocytes
+Idents(b6_f420_combined) <- b6_f420_combined$cell_type_final
+b6_f420_combined <- subset(b6_f420_combined,
+    idents = c("LowQ", "Erythro", "F420"),
+    invert = TRUE)
+
+# Plot and save
+r_dim_plot(b6_f420_combined, "F420 Stroma",
+    group.by = "cell_type_final",
+    split.by = "sample")
+
+ggsave("output/figures/combined_b6_f420.pdf",
+    width = 8,
+    height = 6)
+
+qs::qsave(b6_f420_combined, "output/rdata/b6_f420_combined.qs")
+```
+
+### Create frequency plots of stromal and immune cells
+```{r b6_f420_5, dependson='b6_f420_4', eval=TRUE}
+subset(b6_f420_combined,
+    idents = c("Mono", "Mac", "DC", "NK/T", "B", "Granulo", "Alv Mac"))@meta.data %>%
+    ggplot(aes(sample, fill = cell_type_final)) +
+        geom_bar(position = "fill") +
+        theme_classic()
+
+ggsave("output/figures/b6_immune.pdf",
+    width = 4,
+    height = 4)
+
+subset(b6_f420_combined,
+    idents = c(
+        "Endo",
+        "Peri",
+        "SMC",
+        "Fibroblast",
+        "Lower Airway",
+        "Upper Airway",
+        "Meso",
+        "Adipo")
+    )@meta.data %>%
+    ggplot(aes(sample, fill = cell_type_final)) +
+        geom_bar(position = "fill") +
+        theme_classic()
+
+ggsave("output/figures/b6_stroma.pdf",
+    width = 4,
+    height = 4)
+```

@@ -44,3 +44,8 @@ LungRefs/*
 
 # Local files and output
 output/*
+slurmOut
+input
+main_files
+geo_sub
+/.quarto/
