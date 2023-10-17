@@ -211,15 +211,6 @@ tumor_only %>%
             features = "kegg_ribo_module1",
             group.by = "clust_2")
 
-plot_genes <-
-    gsea_out %>%
-    group_by(cluster) %>%
-    filter(padj <= 0.05) %>%
-    arrange(NES, .by_group = TRUE) %>%
-    slice_head(n = 2) %>%
-    pull(gene) %>%
-    unique()
-
 FeaturePlot(immune_recurl,
             features = kegg_ribo_genes[[1]])
 
