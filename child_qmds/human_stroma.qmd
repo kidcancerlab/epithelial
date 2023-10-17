@@ -1,3 +1,68 @@
+# Set up automated cell type annotation
+
+```{r}
+lung_ref <- qs::qread("LungRefs/normal_lung.qs")
+lung_ref$free_annotation <-
+    str_replace_all(lung_ref$free_annotation,
+        c("/" = "_", "\\+" = "_plus"))
+lung_ref$free_annotation <-
+    stringr::str_replace_all(lung_ref$free_annotation,
+        c("Alveolar Epithelial Type 1" = "Alveolar Epithelial",  #nolint
+            "Alveolar Epithelial Type 2" = "Alveolar Epithelial",  #nolint
+            "Basophil_Mast 1" = "Basophil_Mast",
+            "Basophil_Mast 2" = "Basophil_Mast",
+            "Bronchial Vessel 1" = "Bronchial Vessel",
+            "Bronchial Vessel 2" = "Bronchial Vessel",
+            "IGSF21_plus Dendritic" = "Dendritic cells",
+            "Myeloid Dendritic Type 1" = "Myeloid Dendritic",   #nolint
+            "Myeloid Dendritic Type 2" = "Myeloid Dendritic",   #nolint
+            "Natural Killer" = "NK cells",
+            "Natural Killer T" = "NKT",
+            "NK cells T" = "NKT",
+            "CD4_plus Memory/Effector T" = "CD4+ T cells",
+            "CD4_plus Naive T" = "CD4+ T cells",
+            "CD8_plus Memory_Effector T" = "CD8+ T cells",
+            "CD8_plus Naive T" = "CD8+ T cells",
+            "Proliferating NK_T" = "NKT",
+            "TREM2_plus Dendritic" = "Dendritic cells",
+            "Proliferating Macrophage" = "Macrophage",
+            "Nonclassical Monocyte" = "Monocytes",
+            "Classical Monocyte" = "Monocytes"))
+
+annotate <- function(sobject,
+    aggr_ref = FALSE,
+    label_type = "label.main",
+    ...) {
+        hpca <- celldex::HumanPrimaryCellAtlasData()
+        hpca$label.main <-
+            stringr::str_replace_all(hpca$label.main,
+                c("T_cells" = "T cells",
+                "B_cell" = "B cells",
+                "NK_cell" = "NK cells",
+                "Monocyte" = "Monocytes",
+                "DC" = "Dendritic cells"))
+        huim <- celldex::MonacoImmuneData()
+        ref3 <- GetAssayData(lung_ref)
+        ref <- list(hpca, huim, ref3)
+        labels <- list(
+            hpca[[label_type]],
+            huim[[label_type]],
+            lung_ref$free_annotation)
+        annotation <-
+            SingleR::SingleR(test = Seurat::as.SingleCellExperiment(sobject),
+                ref = ref,
+                labels = labels,
+                aggr.ref = aggr_ref,
+                ...)
+        sobject$annotations <- annotation$labels
+        sobject$cell_scores <-
+            apply(X = annotation$scores,
+                MARGIN = 1,
+                function(x) max(x, na.rm = TRUE))
+        return(sobject)
+    }
+```
+
 # Load the normal human lung data
 GSE227136 contains a very large control normal lung dataset. We will extract normal lung scRNA-seq from this.
 
@@ -95,67 +160,6 @@ names(met_lung) <- mets_meta$Sample_Name
 # Find and exclude tumor cells from met samples
 
 ```{r}
-# lung_ref <- qs::qread("LungRefs/normal_lung.qs")
-# lung_ref$free_annotation <-
-#     str_replace_all(lung_ref$free_annotation,
-#         c("/" = "_", "\\+" = "_plus"))
-# lung_ref$free_annotation <-
-#     stringr::str_replace_all(lung_ref$free_annotation,
-#         c("Alveolar Epithelial Type 1" = "Alveolar Epithelial",  #nolint
-#             "Alveolar Epithelial Type 2" = "Alveolar Epithelial",  #nolint
-#             "Basophil_Mast 1" = "Basophil_Mast",
-#             "Basophil_Mast 2" = "Basophil_Mast",
-#             "Bronchial Vessel 1" = "Bronchial Vessel",
-#             "Bronchial Vessel 2" = "Bronchial Vessel",
-#             "IGSF21_plus Dendritic" = "Dendritic cells",
-#             "Myeloid Dendritic Type 1" = "Myeloid Dendritic",   #nolint
-#             "Myeloid Dendritic Type 2" = "Myeloid Dendritic",   #nolint
-#             "Natural Killer" = "NK cells",
-#             "Natural Killer T" = "NKT",
-#             "NK cells T" = "NKT",
-#             "CD4_plus Memory/Effector T" = "CD4+ T cells",
-#             "CD4_plus Naive T" = "CD4+ T cells",
-#             "CD8_plus Memory_Effector T" = "CD8+ T cells",
-#             "CD8_plus Naive T" = "CD8+ T cells",
-#             "Proliferating NK_T" = "NKT",
-#             "TREM2_plus Dendritic" = "Dendritic cells",
-#             "Proliferating Macrophage" = "Macrophage",
-#             "Nonclassical Monocyte" = "Monocytes",
-#             "Classical Monocyte" = "Monocytes"))
-
-# annotate <- function(sobject,
-#     aggr_ref = FALSE,
-#     label_type = "label.main",
-#     ...) {
-#         hpca <- celldex::HumanPrimaryCellAtlasData()
-#         hpca$label.main <-
-#             stringr::str_replace_all(hpca$label.main,
-#                 c("T_cells" = "T cells",
-#                 "B_cell" = "B cells",
-#                 "NK_cell" = "NK cells",
-#                 "Monocyte" = "Monocytes",
-#                 "DC" = "Dendritic cells"))
-#         huim <- celldex::MonacoImmuneData()
-#         ref3 <- GetAssayData(lung_ref)
-#         ref <- list(hpca, huim, ref3)
-#         labels <- list(
-#             hpca[[label_type]],
-#             huim[[label_type]],
-#             lung_ref$free_annotation)
-#         annotation <-
-#             SingleR::SingleR(test = Seurat::as.SingleCellExperiment(sobject),
-#                 ref = ref,
-#                 labels = labels,
-#                 aggr.ref = aggr_ref,
-#                 ...)
-#         sobject$annotations <- annotation$labels
-#         sobject$cell_scores <-
-#             apply(X = annotation$scores,
-#                 MARGIN = 1,
-#                 function(x) max(x, na.rm = TRUE))
-#         return(sobject)
-#     }
-
 # met_lung <- mclapply(seq_along(met_lung), function(s) {
 #     message(paste("Starting sample", names(met_lung)[s], "..."))
 #     o <- process_seurat(met_lung[[s]]) %>%
@@ -220,19 +224,32 @@ for(i in seq_along(normal_lung)) {
 }
 
 # Merge the normal and metastatic lung data into a single object
+param <- BiocParallel::MulticoreParam(workers = parallelly::availableCores() - 1)
+
 lungs <- merge(normal_lung[[1]],
         c(normal_lung[2:length(normal_lung)], met_stroma),
         add.cell.ids = c(names(normal_lung), names(met_stroma))) %>%
-    FindVariableFeatures() %>%
-    ScaleData() %>%
+    SCTransform() %>%
     RunPCA(npcs = 30, verbose = FALSE) %>%
     harmony::RunHarmony(group.by.vars = c("id")) %>%
     RunUMAP(reduction = "harmony", dims = 1:30) %>%
     FindNeighbors(reduction = "harmony") %>%
-    FindClusters(resolution = 0.1)
+    FindClusters(resolution = 0.1) %>%
+    annotate(BPPARAM = param)
 
-DimPlot(lungs, group.by = "id", split.by = "type")
-r_feature_plot(met_stroma, "COL1A1", split.by = "type")
+qs::qsave(lungs, "output/rdata/integrated_lungs_sct.qs")
+
+r_dim_plot(lungs, group.by = "id", split.by = "type", shuffle = TRUE)
+r_dim_plot(lungs, "Integrated Stroma")
+r_dim_plot(lungs, group.by = "")
+DimPlot(lungs, group.by = "annotations", label = TRUE) + theme(legend.position = "none")
+
+# Label clusters by most frequent assignment
+assign_table <- lungs@meta.data %>%
+    select(seurat_clusters, annotations) %>%
+    group_by(seurat_clusters, annotations) %>%
+    summarise(n = n()) %>%
+    arrange(seurat_clusters, -n)
 ```
 
 
