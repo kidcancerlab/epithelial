@@ -1,6 +1,17 @@
 
 ## Functions to use for cell annotation
 ```{r annotate_cells_fun}
+#' Annotate cells
+#'
+#' This function annotates cells based on the input sobject.
+#'
+#' @param sobject The input sobject.
+#'
+#' @return A Seurat object with the annotated cells.
+#'
+#' @examples
+#' annot_cells(sobject)
+#'
 annot_cells <- function(sobject) {
     cell_assign <- SingleR::SingleR(
         as.SingleCellExperiment(sobject),
@@ -16,11 +27,38 @@ annot_cells <- function(sobject) {
     return(sobject)
 }
 
+#' Function to generate random colors for unique values in a vector
+#'
+#' This function takes a vector as input and generates random colors for each unique value in the vector.
+#' The function uses the rainbow function to generate a set of colors and assigns a random color to each unique value in the input vector.
+#' The seed parameter can be used to set the random seed for reproducibility.
+#'
+#' @param x A vector of values
+#' @param seed An optional seed for the random number generator
+#' @return A vector of colors, with one color assigned to each unique value in the input vector
+#'
+#' @examples
+#' crazy_cols(c("A", "B", "C", "A", "B", "D"))
+#' crazy_cols(c(1, 2, 3, 1, 2, 4))
+#' crazy_cols(c("red", "green", "blue", "red", "green", "yellow"))
+#'
 crazy_cols <- function(x, seed = 1337) {
     set.seed(seed)
     sample(rainbow(n = length(unique(x))))
 }
 
+#' Calculate log fold change between two groups
+#'
+#' This function calculates the log fold change between two groups in a Seurat object.
+#'
+#' @param sobj A Seurat object
+#' @param group_var The variable in the Seurat object that defines the groups
+#' @param group_1 The name of the first group to compare
+#' @param group_2 The name of the second group to compare
+#' @param epsilon A small value to add to the denominator to avoid division by zero
+#' @param assay The assay to use for the calculation
+#'
+#' @return A tibble with two columns: "log_fc" (the log fold change) and "gene" (the gene name)
 calc_logfc <- function(sobj,
                        group_var,
                        group_1,
