@@ -271,17 +271,37 @@ if(!file.exists("misc/lungs_manual_assignment.qs")) {
         `15` = "Dendritic",
         `16` = "Proximal Airway")
 
-    r_dim_plot(lungs, "Manual Assignments")
     lungs$manual_assignments <- Idents(lungs)
     qs::qsave(lungs$manual_assignments, "misc/lungs_manual_assignment.qs")
 
+} else {
+    lungs$manual_assignments <- qs::qread("misc/lungs_manual_assignment.qs")
 }
 
-
-
+r_dim_plot(lungs, "Manual Assignments", group.by = "manual_assignments")
 ```
 
+# Subcluster epithelial cells
 
 ```{r}
+epi <- subset(lungs, manual_assignments == "Distal Airway")
+DefaultAssay(epi) <- "RNA"
+epi <- DietSeurat(epi, assays = "RNA") %>%
+    FindVariableFeatures() %>%
+    ScaleData() %>%
+    RunPCA(npcs = 20, verbose = FALSE) %>%
+    harmony::RunHarmony(group.by.vars = c("id", "type"), lambda = c(1, 1)) %>%
+    RunUMAP(reduction = "harmony", dims = 1:20) %>%
+    FindNeighbors(reduction = "harmony") %>%
+    FindClusters(resolution = 0.4)
+
+epi <- kill_cc(epi)
+
+r_dim_plot(epi, "Epithelial Subclusters")
+r_dim_plot(epi, "Epithelial Subclusters", group.by = "seurat_clusters", split.by = "type")
+r_feature_plot(epi, "KRT8")
+r_feature_plot(epi, "SFTPC")
+r_dim_plot(epi, "Epithelial Cell Cycle", group.by = "Phase")
+r_dim_plot(epi, "Epithelial Subclusters", group.by = "id")
 
 ```
