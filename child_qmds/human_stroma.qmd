@@ -105,6 +105,46 @@ if(!file.exists("output/rdata/normal_lung.qs")) {
 }
 ```
 
+```{r}
+# Check to see if we've already downloaded and processed normal lung
+# from https://doi.org/10.15252/embj.20105114
+if(!file.exists("output/rdata/normal_lung.qs")) {
+    # Download the files
+    if(!dir.exists("Lukassen")) {
+        dir.create("Lukassen")
+    }
+
+    if(!file.exists("Lukassen/counts.csv")) {
+        options(timeout = 1800)
+        download.file("https://figshare.com/ndownloader/files/21999237",
+            destfile = "Lukassen/counts.csv")
+        download.file("https://figshare.com/ndownloader/files/21999240",
+            destfile = "Lukassen/metadata.csv")
+    }
+
+    # Isolate the normal lung datasets
+    c <- read.csv("Lukassen/counts.csv")
+    m <- read.csv("Lukassen/metadata.csv") %>%
+        rename(id = ID,
+            sex = Sex,
+            age = Age,
+            smoking = Smoking,
+            cell_type = Cell.type,
+            mt.percent = MT.ratio)
+    colnames(c) <- rownames(m)
+    normal_lung <- CreateSeuratObject(counts = c, assay = "RNA", meta.data = m) %>%
+        NormalizeData() %>%
+        SplitObject(split.by = "id")
+
+    qs::qsave(normal_lung, "output/rdata/normal_lung.qs")
+
+} else {
+
+    normal_lung <- qs::qread("output/rdata/normal_lung.qs")
+
+}
+```
+
 # Load the osteosarcoma lung metastases
 
 ```{r}
