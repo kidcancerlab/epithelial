@@ -71,41 +71,6 @@ The download will contain all of the lung sets (diseased and normal). We will ke
 NOTE: If you haven't already downloaded and processed, you might need to run this step on a himem node.
 
 ```{r}
-# Check to see if we've already downloaded and processed these files
-if(!file.exists("output/rdata/normal_lung.qs")) {
-    # Download the files
-    if(!dir.exists("GSE227136")) {
-        dir.create("GSE227136")
-    }
-
-    if(!file.exists("GSE227136/GSE227136.rds")) {
-        options(timeout = 1800)
-        download.file("https://ftp.ncbi.nlm.nih.gov/geo/series/GSE227nnn/GSE227136/suppl/GSE227136%5FILD%5Fall%5Fcelltypes%5FSeurat.rds.gz",
-            destfile = "GSE227136/GSE227136.rds.gz")
-        R.utils::gunzip("GSE227136/GSE227136.rds.gz")
-    }
-
-    # Make a list of the normal lung sample names
-    normal_names <- c("THD0002", "THD0006", "THD0010", "THD0014", "VUHD69", "VUHD076")
-
-    # Isolate the normal lung datasets
-    normal_lung <- readRDS("GSE227136/GSE227136.rds") %>%
-        subset(Sample_Name %in% normal_names)
-    DefaultAssay(normal_lung) <- "RNA"
-    normal_lung <- DietSeurat(normal_lung, assays = "RNA") %>%
-        NormalizeData() %>%
-        SplitObject(split.by = "Sample_Name")
-
-    qs::qsave(normal_lung, "output/rdata/normal_lung.qs")
-
-} else {
-
-    normal_lung <- qs::qread("output/rdata/normal_lung.qs")
-
-}
-```
-
-```{r}
 # Check to see if we've already downloaded and processed normal lung
 # from https://doi.org/10.15252/embj.20105114
 if(!file.exists("output/rdata/normal_lung.qs")) {
@@ -123,14 +88,18 @@ if(!file.exists("output/rdata/normal_lung.qs")) {
     }
 
     # Isolate the normal lung datasets
-    c <- read.csv("Lukassen/counts.csv")
+    c <- data.table::fread("Lukassen/counts.csv") %>%
+        data.frame(row.names = 1)
     m <- read.csv("Lukassen/metadata.csv") %>%
         rename(id = ID,
             sex = Sex,
             age = Age,
             smoking = Smoking,
             cell_type = Cell.type,
-            mt.percent = MT.ratio)
+            percent.mt = MT.ratio) %>%
+            mutate(src = "Lukassen",
+                method = "nucleus",
+                type = "Healthy")
     colnames(c) <- rownames(m)
     normal_lung <- CreateSeuratObject(counts = c, assay = "RNA", meta.data = m) %>%
         NormalizeData() %>%
@@ -174,13 +143,11 @@ if(!file.exists("output/rdata/met_lungs.qs")) {
 
 mets_meta <- tribble(
     ~file, ~Sample_Name, ~Sample_Source, ~Sample_Type, ~method,
-    "/gpfs0/home2/gdrobertslab/lab/Counts/S0058/outs/filtered_feature_bc_matrix", "S0058", "Roberts Lab", "Metastasis", "cell",
-    "/gpfs0/home2/gdrobertslab/lab/Counts/S0059/outs/filtered_feature_bc_matrix", "S0059",  "Roberts Lab", "Metastasis", "cell",
     "/gpfs0/home2/gdrobertslab/lab/Counts/S0217/filtered_feature_bc_matrix", "S0217", "Roberts Lab", "Metastasis", "nucleus",
     "/gpfs0/home2/gdrobertslab/lab/Counts/S0218/filtered_feature_bc_matrix", "S0218", "Roberts Lab", "Metastasis", "nucleus",
-    "GSE152048/BC10", "BC10", "GSE152048", "Metastasis", "cell",
-    "GSE152048/BC17", "BC17", "GSE152048", "Metastasis", "cell"
-)
+    "/gpfs0/home2/gdrobertslab/lab/Counts/SC069/filtered_feature_bc_matrix/", "SC069", "Roberts Lab", "Metastasis", "nucleus",
+    "/gpfs0/home2/gdrobertslab/lab/Counts/SC072/filtered_feature_bc_matrix/", "SC072", "Roberts Lab", "Metastasis", "nucleus",
+    "/gpfs0/home2/gdrobertslab/lab/Counts/SC073/filtered_feature_bc_matrix/", "SC073", "Roberts Lab", "Metastasis", "nucleus")
 
 met_lung <- mclapply(1:nrow(mets_meta),
     function(m) {
@@ -199,42 +166,55 @@ names(met_lung) <- mets_meta$Sample_Name
 
 # Find and exclude tumor cells from met samples
 
+Need to rewrite this to make the maunual curation conditional***
 ```{r}
-# met_lung <- mclapply(seq_along(met_lung), function(s) {
-#     message(paste("Starting sample", names(met_lung)[s], "..."))
-#     o <- process_seurat(met_lung[[s]]) %>%
-#         annotate()
-#     return(o)
-#     message(paste("Completed", names(met_lung)[s], "."))
-# }, mc.cores = parallelly::availableCores())
 
-# qs::qsave(met_lung, "output/rdata/met_lung_annotated.qs")
+if(!file.exists("output/rdata/met_lung_annotated.qs")) {
+    met_lung <- mclapply(seq_along(met_lung), function(s) {
+        message(paste("Starting sample", names(met_lung)[s], "..."))
+        o <- process_seurat(met_lung[[s]]) %>%
+            annotate()
+        return(o)
+        message(paste("Completed", names(met_lung)[s], "."))
+    }, mc.cores = parallelly::availableCores())
+    names(met_lung) <- mets_meta$Sample_Name
 
-# plots <- lapply(seq_along(met_lung), function(i) {
-#     p1 <- r_dim_plot(met_lung[[i]], names(met_lung)[i])
-#     p2 <- r_feature_plot(met_lung[[i]], "cell_scores")
-#     p3 <- r_feature_plot(met_lung[[i]], "COL1A1")
-#     p4 <- r_feature_plot(met_lung[[i]], "SPP1")
-#     p5 <- r_feature_plot(met_lung[[i]], "nCount_RNA")
-#     p6 <- DimPlot(met_lung[[i]], label = TRUE, group.by = "annotations") +
-#         theme(legend.position = "none") +
-#         coord_fixed()
-#     p <- (p1 | p6 | p2) / (p3 | p4 | p5)
-#     return(p)
-# })
+    qs::qsave(met_lung, "output/rdata/met_lung_annotated.qs")
+} else {
+    met_lung <- qs::qread("output/rdata/met_lung_annotated.qs")
+}
 
-# # Code for manual curation. Designed for interactive review of plots.
-# i = 6
-# met_lung[[i]]$tumor <- "stroma"
-# plots[[i]]
+plots <- lapply(seq_along(met_lung), function(i) {
+    p1 <- r_dim_plot(met_lung[[i]], names(met_lung)[i])
+    p2 <- r_feature_plot(met_lung[[i]], "cell_scores")
+    p3 <- r_feature_plot(met_lung[[i]], "COL1A1")
+    p4 <- r_feature_plot(met_lung[[i]], "SPP1")
+    p5 <- r_feature_plot(met_lung[[i]], "nCount_RNA")
+    p6 <- DimPlot(met_lung[[i]], label = TRUE, group.by = "annotations") +
+        theme(legend.position = "none") +
+        coord_fixed()
+    p <- (p1 | p6 | p2) / (p3 | p4 | p5)
+    return(p)
+})
 
-# # Use this code, changing cluster numbers, to designate tumor cells.
-# met_lung[[i]]$tumor[met_lung[[i]]$seurat_clusters == 9] <- "tumor"
+# Code for manual curation. Designed for interactive review of plots.
+i = 5
+met_lung[[i]]$tumor <- "stroma"
+plots[[i]]
 
-# # Check result of tumor designation and save a list of tumor assignments.
-# r_dim_plot(met_lung[[i]], "Tumor vs. Stroma", group.by = "tumor")
-# qs::qsave(met_lung[[i]]$tumor,
-#     paste0("misc/", names(met_lung)[i], "-tumor_assignments.qs"))
+gt::gt(met_lung[[i]]@meta.data %>%
+    select(annotations, seurat_clusters) %>%
+    group_by(seurat_clusters, annotations) %>%
+    summarise(n = n()) %>%
+    arrange(seurat_clusters, -n))
+
+# Use this code, changing cluster numbers, to designate tumor cells.
+met_lung[[i]]$tumor[met_lung[[i]]$seurat_clusters == 5] <- "tumor"
+
+# Check result of tumor designation and save a list of tumor assignments.
+r_dim_plot(met_lung[[i]], "Tumor vs. Stroma", group.by = "tumor")
+qs::qsave(met_lung[[i]]$tumor,
+    paste0("misc/", names(met_lung)[i], "-tumor_assignments.qs"))
 
 # Separate the tumor cells from the lung stroma
 met_stroma <- lapply(seq_along(met_lung), function (i) {
@@ -245,31 +225,20 @@ met_stroma <- lapply(seq_along(met_lung), function (i) {
     s <- subset(met_lung[[i]], tumor == "stroma")
     return(s)
 })
-
 names(met_stroma) <- names(met_lung)
 ```
 
 # Combine datasets from normal and met
 
 ```{r}
-# Adjust names of some meta to match our lab standards and simplify
-for(i in seq_along(normal_lung)) {
-    normal_lung[[i]]$id <- normal_lung[[i]]$Sample_Name
-    normal_lung[[i]]$src <- normal_lung[[i]]$Sample_Source
-    normal_lung[[i]]$type <- normal_lung[[i]]$Sample_Type
-    normal_lung[[i]]$method <- "cell"
-    normal_lung[[i]]@meta.data <- normal_lung[[i]]@meta.data %>%
-        select(nCount_RNA, nFeature_RNA, percent.mt, id, src, type, method,
-        manual_annotation_1, annotation_level_1, annotation_level_2, lineage)
-}
-
 # Merge the normal and metastatic lung data into a single object
 param <- BiocParallel::MulticoreParam(workers = parallelly::availableCores() - 1)
 
 lungs <- merge(normal_lung[[1]],
         c(normal_lung[2:length(normal_lung)], met_stroma),
         add.cell.ids = c(names(normal_lung), names(met_stroma))) %>%
-    SCTransform() %>%
+    ScaleData() %>%
+    FindVariableFeatures() %>%
     RunPCA(npcs = 30, verbose = FALSE) %>%
     harmony::RunHarmony(group.by.vars = c("id")) %>%
     RunUMAP(reduction = "harmony", dims = 1:30) %>%
