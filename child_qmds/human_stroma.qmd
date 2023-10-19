@@ -96,7 +96,9 @@ if(!file.exists("output/rdata/normal_lung.qs")) {
             age = Age,
             smoking = Smoking,
             cell_type = Cell.type,
-            percent.mt = MT.ratio) %>%
+            percent.mt = MT.ratio,
+            nFeature_RNA = Gene.count,
+            nCount_RNA = UMI.count) %>%
             mutate(src = "Lukassen",
                 method = "nucleus",
                 type = "Healthy")
@@ -232,6 +234,11 @@ names(met_stroma) <- names(met_lung)
 
 Need to rewrite to make integration conditional on having been previously run***
 ```{r}
+# Downsample the normal lung data
+for(i in seq_along(normal_lung)) {
+    normal_lung[[i]] <- subset(normal_lung[[i]], downsample = 1000)
+}
+
 # Check to see if integrated dataset has already been processed
 if(!file.exists("output/rdata/integrated_lungs.qs")) {
     # Merge the normal and metastatic lung data into a single object
@@ -253,9 +260,12 @@ if(!file.exists("output/rdata/integrated_lungs.qs")) {
     lungs <- qs::qread("output/rdata/integrated_lungs.qs")
 }
 
-r_dim_plot(lungs, group.by = "id", split.by = "type", shuffle = TRUE)
+r_dim_plot(lungs, group.by = "cell_type", split.by = "type", shuffle = TRUE)
 r_dim_plot(lungs, "Integrated Stroma")
-DimPlot(lungs, group.by = "annotations", label = TRUE) + theme(legend.position = "none")
+DimPlot(lungs, group.by = "annotations", split.by = "type", label = TRUE) + theme(legend.position = "none")
+
+DimPlot(lungs, group.by = "cell_type", label = TRUE) + theme(legend.position = "none")
+
 
 # Perform a semi-automated, manually verified cell type assignment
 if(!file.exists("misc/lungs_manual_assignment.qs")) {
