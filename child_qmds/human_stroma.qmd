@@ -323,7 +323,6 @@ if(!file.exists("misc/lungs_manual_assignment.qs")) {
 
 r_dim_plot(lungs, "Manual Assignments", group.by = "manual_assignments")
 r_dim_plot(lungs, "Manual Assignments", group.by = "manual_assignments", split.by = "type")
-r_feature_plot(lungs, "KRT8")
 ```
 
 # Subcluster epithelial cells
@@ -337,9 +336,11 @@ epi <- DietSeurat(epi, assays = "RNA") %>%
     harmony::RunHarmony(group.by.vars = c("id", "type"), lambda = c(1, 1)) %>%
     RunUMAP(reduction = "harmony", dims = 1:20) %>%
     FindNeighbors(reduction = "harmony") %>%
-    FindClusters(resolution = 0.4)
+    FindClusters(resolution = 0.2)
 
 epi <- kill_cc(epi)
+
+qs::qsave(epi, "output/rdata/human_epithelial.qs")
 
 p1 <- r_dim_plot(epi, "Distal Airway - Cell Cycle",
     group.by = "Phase", label = FALSE) +
@@ -355,4 +356,14 @@ p4 <- r_feature_plot(epi, "KRT8")
 p5 <- r_feature_plot(epi, "SFTPC")
 p6 <- r_feature_plot(epi, "PDPN")
 (p1 | p2 | p3) / (p4 | p5 | p6)
+
+Idents(epi) <- epi$seurat_clusters
+epi_marks <- FindAllMarkers(epi)
+
+gt::gt(epi_marks %>%
+    group_by(cluster) %>%
+    slice_max(abs(avg_log2FC), n = 16) %>%
+    arrange(cluster, -avg_log2FC))
+
+r_feature_plot(epi, "KRT17")
 ```
