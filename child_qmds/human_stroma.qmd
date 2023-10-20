@@ -170,7 +170,6 @@ names(met_lung) <- mets_meta$Sample_Name
 
 Need to rewrite this to make the maunual curation conditional***
 ```{r}
-
 if(!file.exists("output/rdata/met_lung_annotated.qs")) {
     met_lung <- mclapply(seq_along(met_lung), function(s) {
         message(paste("Starting sample", names(met_lung)[s], "..."))
@@ -234,15 +233,16 @@ names(met_stroma) <- names(met_lung)
 
 Need to rewrite to make integration conditional on having been previously run***
 ```{r}
-# Downsample the normal lung data
-for(i in seq_along(normal_lung)) {
-    normal_lung[[i]] <- subset(normal_lung[[i]], downsample = 1000)
-}
+if(!file.exists("output/rdata/integrated_lungs_sct.qs")) {
+    # Downsample the normal lung data
+    for(i in seq_along(normal_lung)) {
+        normal_lung[[i]] <- subset(normal_lung[[i]], downsample = 1000)
+    }
 
-# Check to see if integrated dataset has already been processed
+    # Check to see if integrated dataset has already been processed
 if(!file.exists("output/rdata/integrated_lungs.qs")) {
     # Merge the normal and metastatic lung data into a single object
-    param <- BiocParallel::MulticoreParam(workers = parallelly::availableCores() - 1)
+        param <- BiocParallel::MulticoreParam(workers = parallelly::availableCores() - 1)
 
     lungs <- merge(normal_lung[[1]],
             c(normal_lung[2:length(normal_lung)], met_stroma),
@@ -252,49 +252,55 @@ if(!file.exists("output/rdata/integrated_lungs.qs")) {
         RunPCA(npcs = 30, verbose = FALSE) %>%
         harmony::RunHarmony(group.by.vars = c("id")) %>%
         RunUMAP(reduction = "harmony", dims = 1:30) %>%
-        FindNeighbors(reduction = "harmony") %>%
-        FindClusters(resolution = 0.4)
+        FindNeighbors(reduction = "umap", dims = 1:2) %>%
+        FindClusters(resolution = 0.1)
 
-    qs::qsave(lungs, "output/rdata/integrated_lungs.qs")
+        qs::qsave(lungs, "output/rdata/integrated_lungs.qs")
 } else {
     lungs <- qs::qread("output/rdata/integrated_lungs.qs")
 }
 
-r_dim_plot(lungs, group.by = "cell_type", split.by = "type", shuffle = TRUE)
-r_dim_plot(lungs, "Integrated Stroma")
-DimPlot(lungs, group.by = "annotations", split.by = "type", label = TRUE) + theme(legend.position = "none")
-
-DimPlot(lungs, group.by = "cell_type", label = TRUE) + theme(legend.position = "none")
-
+p1 <- r_dim_plot(subset(lungs, type == "Healthy"),
+    group.by = "cell_type",
+    shuffle = TRUE)
+p2 <- DimPlot(subset(lungs, type == "Metastasis"),
+    group.by = "annotations",
+    label = TRUE,
+    shuffle = TRUE) +
+    theme(legend.position = "none") +
+    coord_fixed()
+p3 <- r_dim_plot(lungs, "Integrated Stroma")
+p1 | p2 | p3
 
 # Perform a semi-automated, manually verified cell type assignment
 if(!file.exists("misc/lungs_manual_assignment.qs")) {
     lungs <- annotate(lungs, BPPARAM = param)
 
     assign_table <- lungs@meta.data %>%
-        select(seurat_clusters, annotations) %>%
-        group_by(seurat_clusters, annotations) %>%
+        mutate(integrated = coalesce(annotations, cell_type)) %>%
+        select(seurat_clusters, integrated) %>%
+        group_by(seurat_clusters, integrated) %>%
         summarise(n = n()) %>%
         arrange(seurat_clusters, -n)
 
+    gt::gt(assign_table)
+
     lungs <- RenameIdents(lungs,
-        `0` = "T/NK",
-        `1` = "Macrophage",
-        `2` = "Macrophage",
-        `3` = "T/NK",
-        `4` = "Distal Airway",
-        `5` = "Fibroblast",
+        `0` = "Distal Airway",
+        `1` = "Distal Airway",
+        `2` = "Distal Airway",
+        `3` = "Macrophage",
+        `4` = "Endothelial",
+        `5` = "Monocyte",
         `6` = "Distal Airway",
-        `7` = "Endothelial",
+        `7` = "Proximal Airway",
         `8` = "Macrophage",
-        `9` = "Granulocyte",
-        `10` = "B",
-        `11` = "Macrophage",
-        `12` = "B",
-        `13` = "Endothelial",
-        `14` = "Distal Airway",
-        `15` = "Dendritic",
-        `16` = "Proximal Airway")
+        `9` = "Macrophage",
+        `10` = "Fibroblast",
+        `11` = "Monocyte",
+        `12` = "Distal Airway",
+        `13` = "",
+        `14` = "T/NK")
 
     lungs$manual_assignments <- Idents(lungs)
     qs::qsave(lungs$manual_assignments, "misc/lungs_manual_assignment.qs")
