@@ -340,6 +340,16 @@ epi <- DietSeurat(epi, assays = "RNA") %>%
 
 epi <- kill_cc(epi)
 
+# Create a basaloid signature using genes identified in:
+# https://doi.org/10.1038/s41467-022-33193-0
+basaloid <- c(
+    "FOSL1",
+    "CD24",
+    "ITGB8",
+    "KRT17"
+)
+epi <- AddModuleScore(epi, features = basaloid, name = "Basaloid")
+
 qs::qsave(epi, "output/rdata/human_epithelial.qs")
 
 p1 <- r_dim_plot(epi, "Distal Airway - Cell Cycle",
@@ -353,17 +363,26 @@ p3 <- r_dim_plot(subset(epi, type == "Metastasis"),
     group.by = "seurat_clusters") +
     ggtitle("Distal Airway - Metastasis")
 p4 <- r_feature_plot(epi, "KRT17")
-p5 <- r_feature_plot(epi, "SFTPC")
+p5 <- r_feature_plot(epi, "SFTPC", min.cutoff = 4)
 p6 <- r_feature_plot(epi, "PDPN")
 (p1 | p2 | p3) / (p5 | p6 | p4)
+
+# Show genes from the basaloid signature identified in:
+# https://doi.org/10.1038/s41467-022-33193-0
+p1 <- r_feature_plot(epi, "FOSL1")
+p2 <- r_feature_plot(epi, "CD24")
+p3 <- r_feature_plot(epi, "ITGB8")
+p1 | p2 | p3
+
+# Show markers of activated AEC2
+r_feature_plot(epi, "AREG")
 
 Idents(epi) <- epi$seurat_clusters
 epi_marks <- FindAllMarkers(epi)
 
 gt::gt(epi_marks %>%
     group_by(cluster) %>%
-    slice_max(abs(avg_log2FC), n = 16) %>%
-    arrange(cluster, -avg_log2FC))
-
-r_feature_plot(epi, "KRT17")
+    slice_max(abs(avg_log2FC), n = 20) %>%
+    arrange(cluster, -avg_log2FC)) %>%
+    tab_header("DEGs in human AECs (by cluster)")
 ```
