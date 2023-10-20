@@ -295,11 +295,11 @@ if(!file.exists("misc/lungs_manual_assignment.qs")) {
         `6` = "Distal Airway",
         `7` = "Proximal Airway",
         `8` = "Macrophage",
-        `9` = "Macrophage",
+        `9` = "Dendritic",
         `10` = "Fibroblast",
         `11` = "Monocyte",
         `12` = "Distal Airway",
-        `13` = "",
+        `13` = "Dendritic",
         `14` = "T/NK")
 
     lungs$manual_assignments <- Idents(lungs)
@@ -309,7 +309,7 @@ if(!file.exists("misc/lungs_manual_assignment.qs")) {
     lungs$manual_assignments <- qs::qread("misc/lungs_manual_assignment.qs")
 }
 
-r_dim_plot(lungs, "Manual Assignments", group.by = "manual_assignments")
+r_dim_plot(lungs, "Manual Assignments")
 ```
 
 # Subcluster epithelial cells
