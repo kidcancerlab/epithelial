@@ -230,22 +230,28 @@ names(met_stroma) <- names(met_lung)
 
 # Combine datasets from normal and met
 
+Need to rewrite to make integration conditional on having been previously run***
 ```{r}
-# Merge the normal and metastatic lung data into a single object
-param <- BiocParallel::MulticoreParam(workers = parallelly::availableCores() - 1)
+# Check to see if integrated dataset has already been processed
+if(!file.exists("output/rdata/integrated_lungs.qs")) {
+    # Merge the normal and metastatic lung data into a single object
+    param <- BiocParallel::MulticoreParam(workers = parallelly::availableCores() - 1)
 
-lungs <- merge(normal_lung[[1]],
-        c(normal_lung[2:length(normal_lung)], met_stroma),
-        add.cell.ids = c(names(normal_lung), names(met_stroma))) %>%
-    ScaleData() %>%
-    FindVariableFeatures() %>%
-    RunPCA(npcs = 30, verbose = FALSE) %>%
-    harmony::RunHarmony(group.by.vars = c("id")) %>%
-    RunUMAP(reduction = "harmony", dims = 1:30) %>%
-    FindNeighbors(reduction = "harmony") %>%
-    FindClusters(resolution = 0.4)
+    lungs <- merge(normal_lung[[1]],
+            c(normal_lung[2:length(normal_lung)], met_stroma),
+            add.cell.ids = c(names(normal_lung), names(met_stroma))) %>%
+        ScaleData() %>%
+        FindVariableFeatures() %>%
+        RunPCA(npcs = 30, verbose = FALSE) %>%
+        harmony::RunHarmony(group.by.vars = c("id")) %>%
+        RunUMAP(reduction = "harmony", dims = 1:30) %>%
+        FindNeighbors(reduction = "harmony") %>%
+        FindClusters(resolution = 0.4)
 
-qs::qsave(lungs, "output/rdata/integrated_lungs_sct.qs")
+    qs::qsave(lungs, "output/rdata/integrated_lungs.qs")
+} else {
+    lungs <- qs::qread("output/rdata/integrated_lungs.qs")
+}
 
 r_dim_plot(lungs, group.by = "id", split.by = "type", shuffle = TRUE)
 r_dim_plot(lungs, "Integrated Stroma")
