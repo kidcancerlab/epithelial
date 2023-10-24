@@ -71,9 +71,53 @@ The download will contain all of the lung sets (diseased and normal). We will ke
 NOTE: If you haven't already downloaded and processed, you might need to run this step on a himem node.
 
 ```{r}
-# Check to see if we've already downloaded and processed normal lung
+# Check to see if we've already downloaded and processed whole cell normal lung
+if(!file.exists("output/rdata/normal_lung_fresh.qs")) {
+    # Download the files
+    if(!dir.exists("GSE227136")) {
+        dir.create("GSE227136")
+    }
+
+    if(!file.exists("GSE227136/GSE227136.rds")) {
+        options(timeout = 1800)
+        download.file("https://ftp.ncbi.nlm.nih.gov/geo/series/GSE227nnn/GSE227136/suppl/GSE227136%5FILD%5Fall%5Fcelltypes%5FSeurat.rds.gz",
+            destfile = "GSE227136/GSE227136.rds.gz")
+        R.utils::gunzip("GSE227136/GSE227136.rds.gz")
+    }
+
+    # Make a list of the normal lung sample names
+    normal_names <- c("THD0002", "THD0006", "THD0010", "THD0014", "VUHD69", "VUHD076")
+
+    # Isolate the normal lung whole cell datasets
+    normal_lung_cell <- readRDS("GSE227136/GSE227136.rds") %>%
+        subset(Sample_Name %in% normal_names)
+    DefaultAssay(normal_lung_cell) <- "RNA"
+    normal_lung_cell@meta.data <- normal_lung_cell@meta.data %>%
+        rename(id = Short_Sample_Name,
+            sex = Gender,
+            age = Age,
+            smoking = Tobacco,
+            cell_type = manual_annotation_1) %>%
+            mutate(src = "GSE227136",
+                method = "cell",
+                type = "Healthy") %>%
+            select(nCount_RNA, nFeature_RNA, percent.mt, id, sex, age, smoking, cell_type, src,
+                method, type, )
+    normal_lung_cell <- DietSeurat(normal_lung_cell, assays = "RNA") %>%
+        NormalizeData() %>%
+        SplitObject(split.by = "id")
+
+    qs::qsave(normal_lung_cell, "output/rdata/normal_lung_fresh.qs")
+
+} else {
+
+    normal_lung_cell <- qs::qread("output/rdata/normal_lung_fresh.qs")
+
+}
+
+# Check to see if we've already downloaded and processed frozen normal lung
 # from https://doi.org/10.15252/embj.20105114
-if(!file.exists("output/rdata/normal_lung.qs")) {
+if(!file.exists("output/rdata/normal_lung_nuclei.qs")) {
     # Download the files
     if(!dir.exists("Lukassen")) {
         dir.create("Lukassen")
@@ -87,7 +131,7 @@ if(!file.exists("output/rdata/normal_lung.qs")) {
             destfile = "Lukassen/metadata.csv")
     }
 
-    # Isolate the normal lung datasets
+    # Isolate the normal lung datasets (frozen)
     c <- data.table::fread("Lukassen/counts.csv") %>%
         data.frame(row.names = 1)
     m <- read.csv("Lukassen/metadata.csv") %>%
@@ -103,17 +147,19 @@ if(!file.exists("output/rdata/normal_lung.qs")) {
                 method = "nucleus",
                 type = "Healthy")
     colnames(c) <- rownames(m)
-    normal_lung <- CreateSeuratObject(counts = c, assay = "RNA", meta.data = m) %>%
+    normal_lung_nuclei <- CreateSeuratObject(counts = c, assay = "RNA", meta.data = m) %>%
         NormalizeData() %>%
         SplitObject(split.by = "id")
 
-    qs::qsave(normal_lung, "output/rdata/normal_lung.qs")
+    qs::qsave(normal_lung_nuclei, "output/rdata/normal_lung_nuclei.qs")
 
 } else {
 
-    normal_lung <- qs::qread("output/rdata/normal_lung.qs")
+    normal_lung_nuclei <- qs::qread("output/rdata/normal_lung_nuclei.qs")
 
 }
+
+normal_lung <- c(normal_lung_cell, normal_lung_nuclei)
 ```
 
 # Load the osteosarcoma lung metastases
@@ -145,6 +191,10 @@ if(!file.exists("output/rdata/met_lungs.qs")) {
 
 mets_meta <- tribble(
     ~file, ~Sample_Name, ~Sample_Source, ~Sample_Type, ~method,
+    "GSE152048/BC10", "BC10", "GSE152048", "Metastasis", "cell",
+    "GSE152048/BC17", "BC17", "GSE152048", "Metastasis", "cell",
+    "/gpfs0/home2/gdrobertslab/lab/Counts/S0058/outs/filtered_feature_bc_matrix/", "S0058", "Roberts Lab", "Metastasis", "cell",
+    "/gpfs0/home2/gdrobertslab/lab/Counts/S0059/outs/filtered_feature_bc_matrix/", "S0059", "Roberts Lab", "Metastasis", "cell",
     "/gpfs0/home2/gdrobertslab/lab/Counts/S0217/filtered_feature_bc_matrix", "S0217", "Roberts Lab", "Metastasis", "nucleus",
     "/gpfs0/home2/gdrobertslab/lab/Counts/S0218/filtered_feature_bc_matrix", "S0218", "Roberts Lab", "Metastasis", "nucleus",
     "/gpfs0/home2/gdrobertslab/lab/Counts/SC069/filtered_feature_bc_matrix/", "SC069", "Roberts Lab", "Metastasis", "nucleus",
@@ -175,8 +225,8 @@ if(!file.exists("output/rdata/met_lung_annotated.qs")) {
         message(paste("Starting sample", names(met_lung)[s], "..."))
         o <- process_seurat(met_lung[[s]]) %>%
             annotate()
+        message(paste0("Completed" , names(met_lung)[s], "."))
         return(o)
-        message(paste("Completed", names(met_lung)[s], "."))
     }, mc.cores = parallelly::availableCores())
     names(met_lung) <- mets_meta$Sample_Name
 
@@ -275,19 +325,14 @@ if(!file.exists("output/rdata/integrated_lungs.qs")) {
 p1 <- r_dim_plot(subset(lungs, type == "Healthy"),
     group.by = "cell_type",
     shuffle = TRUE)
-p2 <- DimPlot(subset(lungs, type == "Metastasis"),
+p2 <- r_dim_plot(subset(lungs, type == "Metastasis"),
     group.by = "annotations",
-    label = TRUE,
-    shuffle = TRUE) +
-    theme(legend.position = "none") +
-    coord_fixed()
+    shuffle = TRUE)
 p3 <- r_dim_plot(lungs, "Integrated Stroma")
 p1 | p2 | p3
 
 # Perform a semi-automated, manually verified cell type assignment
 if(!file.exists("misc/lungs_manual_assignment.qs")) {
-    lungs <- annotate(lungs, BPPARAM = param)
-
     gt::gt(lungs@meta.data %>%
         mutate(integrated = coalesce(annotations, cell_type)) %>%
         select(seurat_clusters, integrated) %>%
@@ -296,32 +341,43 @@ if(!file.exists("misc/lungs_manual_assignment.qs")) {
         arrange(seurat_clusters, -n))
 
     lungs <- RenameIdents(lungs,
-        `0` = "Alveolar Epithelial",
-        `1` = "Alveolar Epithelial",
-        `2` = "Tumor Carryover",
-        `3` = "Alveolar Epithelial",
-        `4` = "Monocyte",
-        `5` = "Endothelial",
-        `6` = "Macrophage",
-        `7` = "Alveolar Epithelial",
-        `8` = "Alveolar Epithelial",
-        `9` = "Ciliated",
-        `10` = "Macrophage",
-        `11` = "Fibroblast",
-        `12` = "Macrophage",
-        `13` = "Monocyte",
-        `14` = "Endothelial",
-        `15` = "Club",
-        `16` = "Dendritic",
-        `17` = "T/NK")
+        `0` = "Endothelial",
+        `1` = "Mononuclear",
+        `2` = "Alveolar Epithelial",
+        `3` = "Mononuclear",
+        `4` = "Tumor Carryover",
+        `5` = "T/NK",
+        `6` = "Alveolar Epithelial",
+        `7` = "T/NK",
+        `8` = "Fibroblast",
+        `9` = "Mononuclear",
+        `10` = "Alveolar Epithelial",
+        `11` = "Alveolar Epithelial",
+        `12` = "Alveolar Epithelial",
+        `13` = "Mononuclear",
+        `14` = "T/NK",
+        `15` = "Airway Epithelial",
+        `16` = "Tumor Carryover",
+        `17` = "Stem/Proliferating",
+        `18` = "Granulocyte",
+        `19` = "B",
+        `20` = "Stem/Proliferating",
+        `21` = "Alveolar Epithelial",
+        `22` = "B",
+        `23` = "Endothelial",
+        `24` = "Endothelial",
+        `25` = "T/NK")
 
     lungs$manual_assignments <- Idents(lungs)
+    Idents(lungs) <- lungs$seurat_clusters
     qs::qsave(lungs$manual_assignments, "misc/lungs_manual_assignment.qs")
 } else {
     lungs$manual_assignments <- qs::qread("misc/lungs_manual_assignment.qs")
 }
 
-r_dim_plot(lungs, "Manual Assignments", group.by = "manual_assignments")
+p3 <- r_dim_plot(lungs, "Manual Assignments", group.by = "manual_assignments")
+p1 | p2 | p3
+
 r_dim_plot(lungs, "Manual Assignments", group.by = "manual_assignments", split.by = "type")
 ```
 
