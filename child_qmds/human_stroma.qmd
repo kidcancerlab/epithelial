@@ -479,7 +479,12 @@ epi$epi_type <- Idents(epi)
 p2 <- r_dim_plot(epi,
     group.by = "epi_type",
     split.by = "type")
-((p1 | p2) + plot_layout(widths = c(1, 2))) / (p5 | p6 | p4 | p3)
+layout <- "
+    AA
+    BC
+    DE"
+wrap_elements(full = p2) / (p5 | p6) / (p4 | p3)
+p2 + p5 + p6 + p4 + p3 + plot_layout(design = layout)
 
 # Consolidate into a summary dotplot
 epi_genes <- c( "SCGB1A1", "AES", "SFTPC", "ABCA3",
