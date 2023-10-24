@@ -168,7 +168,7 @@ names(met_lung) <- mets_meta$Sample_Name
 
 # Find and exclude tumor cells from met samples
 
-Need to rewrite this to make the maunual curation conditional***
+NOTE: if tumor cells have not been previously assigned for any of the samples, this script will error out with a message to run that code and create those samples before proceding.
 ```{r}
 if(!file.exists("output/rdata/met_lung_annotated.qs")) {
     met_lung <- mclapply(seq_along(met_lung), function(s) {
@@ -185,37 +185,50 @@ if(!file.exists("output/rdata/met_lung_annotated.qs")) {
     met_lung <- qs::qread("output/rdata/met_lung_annotated.qs")
 }
 
-plots <- lapply(seq_along(met_lung), function(i) {
-    p1 <- r_dim_plot(met_lung[[i]], names(met_lung)[i])
-    p2 <- r_feature_plot(met_lung[[i]], "cell_scores")
-    p3 <- r_feature_plot(met_lung[[i]], "COL1A1")
-    p4 <- r_feature_plot(met_lung[[i]], "SPP1")
-    p5 <- r_feature_plot(met_lung[[i]], "nCount_RNA")
-    p6 <- DimPlot(met_lung[[i]], label = TRUE, group.by = "annotations") +
-        theme(legend.position = "none") +
-        coord_fixed()
-    p <- (p1 | p6 | p2) / (p3 | p4 | p5)
-    return(p)
-})
+# Check to see if all of the relevant annotation files are present
+file_check <- TRUE
+for(f in names(met_lung)) {
+    if(!file.exists(paste0("misc/", f, "-tumor_assignments.qs"))) {
+        file_check <- FALSE
+        stop("At least some of the tumor assignment files are missing. You will need to run the code process in this file manually before proceding to create those files.")
+    }
+}
 
-# Code for manual curation. Designed for interactive review of plots.
-i = 5
-met_lung[[i]]$tumor <- "stroma"
-plots[[i]]
+# Skip this code if all files are present, otherwise will need to
+# be run manually to produce the annotation files
+if(!file_check) {
+    plots <- lapply(seq_along(met_lung), function(i) {
+        p1 <- r_dim_plot(met_lung[[i]], names(met_lung)[i])
+        p2 <- r_feature_plot(met_lung[[i]], "cell_scores")
+        p3 <- r_feature_plot(met_lung[[i]], "COL1A1")
+        p4 <- r_feature_plot(met_lung[[i]], "SPP1")
+        p5 <- r_feature_plot(met_lung[[i]], "nCount_RNA")
+        p6 <- DimPlot(met_lung[[i]], label = TRUE, group.by = "annotations") +
+            theme(legend.position = "none") +
+            coord_fixed()
+        p <- (p1 | p6 | p2) / (p3 | p4 | p5)
+        return(p)
+    })
 
-gt::gt(met_lung[[i]]@meta.data %>%
-    select(annotations, seurat_clusters) %>%
-    group_by(seurat_clusters, annotations) %>%
-    summarise(n = n()) %>%
-    arrange(seurat_clusters, -n))
+    # Code for manual curation. Designed for interactive review of plots.
+    i = 5
+    met_lung[[i]]$tumor <- "stroma"
+    plots[[i]]
 
-# Use this code, changing cluster numbers, to designate tumor cells.
-met_lung[[i]]$tumor[met_lung[[i]]$seurat_clusters == 5] <- "tumor"
+    gt::gt(met_lung[[i]]@meta.data %>%
+        select(annotations, seurat_clusters) %>%
+        group_by(seurat_clusters, annotations) %>%
+        summarise(n = n()) %>%
+        arrange(seurat_clusters, -n))
 
-# Check result of tumor designation and save a list of tumor assignments.
-r_dim_plot(met_lung[[i]], "Tumor vs. Stroma", group.by = "tumor")
-qs::qsave(met_lung[[i]]$tumor,
-    paste0("misc/", names(met_lung)[i], "-tumor_assignments.qs"))
+    # Use this code, changing cluster numbers, to designate tumor cells.
+    met_lung[[i]]$tumor[met_lung[[i]]$seurat_clusters == 5] <- "tumor"
+
+    # Check result of tumor designation and save a list of tumor assignments.
+    r_dim_plot(met_lung[[i]], "Tumor vs. Stroma", group.by = "tumor")
+    qs::qsave(met_lung[[i]]$tumor,
+        paste0("misc/", names(met_lung)[i], "-tumor_assignments.qs"))
+}
 
 # Separate the tumor cells from the lung stroma
 met_stroma <- lapply(seq_along(met_lung), function (i) {
@@ -233,16 +246,15 @@ names(met_stroma) <- names(met_lung)
 
 Need to rewrite to make integration conditional on having been previously run***
 ```{r}
-if(!file.exists("output/rdata/integrated_lungs_sct.qs")) {
+    # Check to see if integrated dataset has already been processed
+if(!file.exists("output/rdata/integrated_lungs.qs")) {
+    # Merge the normal and metastatic lung data into a single object
     # Downsample the normal lung data
     for(i in seq_along(normal_lung)) {
         normal_lung[[i]] <- subset(normal_lung[[i]], downsample = 1000)
     }
 
-    # Check to see if integrated dataset has already been processed
-if(!file.exists("output/rdata/integrated_lungs.qs")) {
-    # Merge the normal and metastatic lung data into a single object
-        param <- BiocParallel::MulticoreParam(workers = parallelly::availableCores() - 1)
+    param <- BiocParallel::MulticoreParam(workers = parallelly::availableCores() - 1)
 
     lungs <- merge(normal_lung[[1]],
             c(normal_lung[2:length(normal_lung)], met_stroma),
@@ -253,7 +265,7 @@ if(!file.exists("output/rdata/integrated_lungs.qs")) {
         harmony::RunHarmony(group.by.vars = c("id")) %>%
         RunUMAP(reduction = "harmony", dims = 1:30) %>%
         FindNeighbors(reduction = "umap", dims = 1:2) %>%
-        FindClusters(resolution = 0.1)
+        FindClusters(resolution = 0.2)
 
         qs::qsave(lungs, "output/rdata/integrated_lungs.qs")
 } else {
@@ -276,47 +288,47 @@ p1 | p2 | p3
 if(!file.exists("misc/lungs_manual_assignment.qs")) {
     lungs <- annotate(lungs, BPPARAM = param)
 
-    assign_table <- lungs@meta.data %>%
+    gt::gt(lungs@meta.data %>%
         mutate(integrated = coalesce(annotations, cell_type)) %>%
         select(seurat_clusters, integrated) %>%
         group_by(seurat_clusters, integrated) %>%
         summarise(n = n()) %>%
-        arrange(seurat_clusters, -n)
-
-    gt::gt(assign_table)
+        arrange(seurat_clusters, -n))
 
     lungs <- RenameIdents(lungs,
-        `0` = "Distal Airway",
-        `1` = "Distal Airway",
-        `2` = "Distal Airway",
-        `3` = "Macrophage",
-        `4` = "Endothelial",
-        `5` = "Monocyte",
-        `6` = "Distal Airway",
-        `7` = "Proximal Airway",
-        `8` = "Macrophage",
-        `9` = "Dendritic",
-        `10` = "Fibroblast",
-        `11` = "Monocyte",
-        `12` = "Distal Airway",
-        `13` = "Dendritic",
-        `14` = "T/NK")
+        `0` = "Alveolar Epithelial",
+        `1` = "Alveolar Epithelial",
+        `2` = "Tumor Carryover",
+        `3` = "Alveolar Epithelial",
+        `4` = "Monocyte",
+        `5` = "Endothelial",
+        `6` = "Macrophage",
+        `7` = "Alveolar Epithelial",
+        `8` = "Alveolar Epithelial",
+        `9` = "Ciliated",
+        `10` = "Macrophage",
+        `11` = "Fibroblast",
+        `12` = "Macrophage",
+        `13` = "Monocyte",
+        `14` = "Endothelial",
+        `15` = "Club",
+        `16` = "Dendritic",
+        `17` = "T/NK")
 
     lungs$manual_assignments <- Idents(lungs)
     qs::qsave(lungs$manual_assignments, "misc/lungs_manual_assignment.qs")
-
 } else {
     lungs$manual_assignments <- qs::qread("misc/lungs_manual_assignment.qs")
 }
 
-r_dim_plot(lungs, "Manual Assignments")
+r_dim_plot(lungs, "Manual Assignments", group.by = "manual_assignments")
+r_dim_plot(lungs, "Manual Assignments", group.by = "manual_assignments", split.by = "type")
 ```
 
 # Subcluster epithelial cells
 
 ```{r}
-epi <- subset(lungs, manual_assignments == "Distal Airway")
-DefaultAssay(epi) <- "RNA"
+epi <- subset(lungs, manual_assignments == "Alveolar Epithelial")
 epi <- DietSeurat(epi, assays = "RNA") %>%
     FindVariableFeatures() %>%
     ScaleData() %>%
@@ -324,15 +336,34 @@ epi <- DietSeurat(epi, assays = "RNA") %>%
     harmony::RunHarmony(group.by.vars = c("id", "type"), lambda = c(1, 1)) %>%
     RunUMAP(reduction = "harmony", dims = 1:20) %>%
     FindNeighbors(reduction = "harmony") %>%
-    FindClusters(resolution = 0.4)
+    FindClusters(resolution = 0.2)
 
 epi <- kill_cc(epi)
 
-r_dim_plot(epi, "Epithelial Subclusters")
-r_dim_plot(epi, "Epithelial Subclusters", group.by = "seurat_clusters", split.by = "type")
-r_feature_plot(epi, "KRT8")
-r_feature_plot(epi, "SFTPC")
-r_dim_plot(epi, "Epithelial Cell Cycle", group.by = "Phase")
-r_dim_plot(epi, "Epithelial Subclusters", group.by = "id")
+qs::qsave(epi, "output/rdata/human_epithelial.qs")
 
+p1 <- r_dim_plot(epi, "Distal Airway - Cell Cycle",
+    group.by = "Phase", label = FALSE) +
+    ggtitle("Distal Airway - Phase") +
+    theme(legend.position = "right")
+p2 <- r_dim_plot(subset(epi, type == "Healthy"),
+    group.by = "seurat_clusters") +
+    ggtitle("Distal Airway - Healthy")
+p3 <- r_dim_plot(subset(epi, type == "Metastasis"),
+    group.by = "seurat_clusters") +
+    ggtitle("Distal Airway - Metastasis")
+p4 <- r_feature_plot(epi, "KRT8")
+p5 <- r_feature_plot(epi, "SFTPC")
+p6 <- r_feature_plot(epi, "PDPN")
+(p1 | p2 | p3) / (p4 | p5 | p6)
+
+Idents(epi) <- epi$seurat_clusters
+epi_marks <- FindAllMarkers(epi)
+
+gt::gt(epi_marks %>%
+    group_by(cluster) %>%
+    slice_max(abs(avg_log2FC), n = 16) %>%
+    arrange(cluster, -avg_log2FC))
+
+r_feature_plot(epi, "KRT17")
 ```
