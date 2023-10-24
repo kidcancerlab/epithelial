@@ -385,12 +385,24 @@ r_dim_plot(lungs, "Manual Assignments", group.by = "manual_assignments", split.b
 
 ```{r}
 epi <- subset(lungs, manual_assignments == "Alveolar Epithelial")
+
+# Normalize the numbers of cells between normal and mets
+ncells <- min(table(epi$type))
+epi <- SplitObject(epi, split.by = "type")
+
+for(t in names(epi)) {
+    epi[[t]] <- subset(epi[[t]], cells = sample(colnames(epi[[t]]), size = ncells))
+}
+
+epi <- merge(epi[[1]], epi[[2]])
+
+# Reprocess the subsetted cells
 epi <- DietSeurat(epi, assays = "RNA") %>%
     FindVariableFeatures() %>%
     ScaleData() %>%
     RunPCA(npcs = 20, verbose = FALSE) %>%
-    harmony::RunHarmony(group.by.vars = c("id", "type"), lambda = c(1, 1)) %>%
-    RunUMAP(reduction = "harmony", dims = 1:20) %>%
+    harmony::RunHarmony(group.by.vars = c("id", "src", "type"), lambda = c(2, 2, 1)) %>%
+    RunUMAP(reduction = "harmony", dims = 1:20, seed.use = 555) %>%
     FindNeighbors(reduction = "harmony") %>%
     FindClusters(resolution = 0.2)
 
@@ -412,16 +424,15 @@ p1 <- r_dim_plot(epi, "Distal Airway - Cell Cycle",
     group.by = "Phase", label = FALSE) +
     ggtitle("Distal Airway - Phase") +
     theme(legend.position = "right")
-p2 <- r_dim_plot(subset(epi, type == "Healthy"),
-    group.by = "seurat_clusters") +
+p2 <- r_dim_plot(epi,
+    group.by = "seurat_clusters",
+    split.by = "type") +
     ggtitle("Distal Airway - Healthy")
-p3 <- r_dim_plot(subset(epi, type == "Metastasis"),
-    group.by = "seurat_clusters") +
-    ggtitle("Distal Airway - Metastasis")
-p4 <- r_feature_plot(epi, "KRT17")
-p5 <- r_feature_plot(epi, "SFTPC", min.cutoff = 4)
+p3 <- r_feature_plot(epi, "FN1")
+p4 <- r_feature_plot(epi, "KRT17", max.cutoff = 3)
+p5 <- r_feature_plot(epi, "SFTPC", min.cutoff = 5)
 p6 <- r_feature_plot(epi, "PDPN")
-(p1 | p2 | p3) / (p4 | p5 | p6)
+(p1 | p2 ) / (p5 | p6 | p4 | p3)
 
 # Show genes from the basaloid signature identified in:
 # https://doi.org/10.1038/s41467-022-33193-0
