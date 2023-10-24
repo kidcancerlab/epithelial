@@ -376,13 +376,68 @@ p1 | p2 | p3
 
 # Show markers of activated AEC2
 r_feature_plot(epi, "AREG")
+r_feature_plot(epi, "TP63")
+r_feature_plot(epi, "NTRK2")
 
 Idents(epi) <- epi$seurat_clusters
-epi_marks <- FindAllMarkers(epi)
+epi_marks <- FindAllMarkers(epi, test.use = "DESeq2")
 
 gt::gt(epi_marks %>%
     group_by(cluster) %>%
     slice_max(abs(avg_log2FC), n = 20) %>%
     arrange(cluster, -avg_log2FC)) %>%
-    tab_header("DEGs in human AECs (by cluster)")
+    gt::tab_header("DEGs in human AECs (by cluster)")
+```
+
+# Subcluster macrophages
+
+```{r}
+macs <- subset(lungs,
+    manual_assignments == "Monocyte" |
+    manual_assignments == "Macrophage" |
+    manual_assignments == "Dendritic")
+
+# Filter out a group of type 2 AECs that got carried over in this subset
+
+
+macs <- DietSeurat(macs, assays = "RNA") %>%
+    FindVariableFeatures() %>%
+    ScaleData() %>%
+    RunPCA(npcs = 20, verbose = FALSE) %>%
+    harmony::RunHarmony(group.by.vars = c("id", "type"), lambda = c(1, 1)) %>%
+    RunUMAP(reduction = "harmony", dims = 1:20) %>%
+    FindNeighbors(reduction = "harmony") %>%
+    FindClusters(resolution = 0.2)
+
+r_dim_plot(macs, "Macrophage Clustering")
+
+macs <- kill_cc(macs)
+
+macs <- AddModuleScore(macs, features = basaloid, name = "Basaloid")
+
+qs::qsave(macs, "output/rdata/human_macsthelial.qs")
+
+p1 <- r_dim_plot(macs,
+    group.by = "Phase", label = FALSE) +
+    ggtitle("Macrophages - Phase") +
+    theme(legend.position = "right")
+p2 <- r_dim_plot(subset(macs, type == "Healthy"),
+    group.by = "seurat_clusters") +
+    ggtitle("Macrophages - Healthy")
+p3 <- r_dim_plot(subset(macs, type == "Metastasis"),
+    group.by = "seurat_clusters") +
+    ggtitle("Macrophages - Metastasis")
+p4 <- r_feature_plot(macs, "CD47")
+p5 <- r_feature_plot(macs, "IL6")
+p6 <- r_feature_plot(macs, "IL1B")
+(p1 | p2 | p3) / (p5 | p6 | p4)
+
+Idents(macs) <- macs$seurat_clusters
+macs_marks <- FindAllMarkers(macs)
+
+gt::gt(macs_marks %>%
+    group_by(cluster) %>%
+    slice_max(abs(avg_log2FC), n = 20) %>%
+    arrange(cluster, -avg_log2FC)) %>%
+    gt::tab_header("DEGs in human mononuclear cells (by cluster)")
 ```
