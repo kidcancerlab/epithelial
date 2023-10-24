@@ -384,41 +384,50 @@ r_dim_plot(lungs, "Manual Assignments", group.by = "manual_assignments", split.b
 # Subcluster epithelial cells
 
 ```{r}
-epi <- subset(lungs, manual_assignments == "Alveolar Epithelial")
+if(!file.exists("output/rdata/human_epithelial.qs")) {
+    epi <- subset(lungs, manual_assignments == "Alveolar Epithelial")
 
-# Normalize the numbers of cells between normal and mets
-ncells <- min(table(epi$type))
-epi <- SplitObject(epi, split.by = "type")
+    # Normalize the numbers of cells between normal and mets
+    ncells <- min(table(epi$type))
+    epi <- SplitObject(epi, split.by = "type")
 
-for(t in names(epi)) {
-    epi[[t]] <- subset(epi[[t]], cells = sample(colnames(epi[[t]]), size = ncells))
+    for(t in names(epi)) {
+        epi[[t]] <- subset(epi[[t]], cells = sample(colnames(epi[[t]]), size = ncells))
+    }
+
+    epi <- merge(epi[[1]], epi[[2]])
+
+    # Reprocess the subsetted cells
+    epi <- DietSeurat(epi, assays = "RNA") %>%
+        FindVariableFeatures() %>%
+        ScaleData() %>%
+        RunPCA(npcs = 20, verbose = FALSE) %>%
+        harmony::RunHarmony(group.by.vars = c("id", "src", "type"), lambda = c(2, 2, 1)) %>%
+        RunUMAP(reduction = "harmony", dims = 1:20, seed.use = 555) %>%
+        FindNeighbors(reduction = "harmony") %>%
+        FindClusters(resolution = 0.2)
+
+    epi <- kill_cc(epi)
+    Idents(epi) <- epi$seurat_clusters
+
+    # Create a basaloid signature using genes identified in:
+    # https://doi.org/10.1038/s41467-022-33193-0
+    # https://doi.org/10.1186/s40246-022-00393-0
+    basaloid <- c(
+        "FOSL1",
+        "CD24",
+        "ITGB8",
+        "KRT17"
+    )
+    epi <- AddModuleScore(epi, features = basaloid, name = "Basaloid")
+
+    # Cluster 5 is a population of APCs that got caught up in the subset
+    epi <- subset(epi, idents != 5)
+
+    qs::qsave(epi, "output/rdata/human_epithelial.qs")
+} else {
+    epi <- qs::qread("output/rdata/human_epithelial.qs")
 }
-
-epi <- merge(epi[[1]], epi[[2]])
-
-# Reprocess the subsetted cells
-epi <- DietSeurat(epi, assays = "RNA") %>%
-    FindVariableFeatures() %>%
-    ScaleData() %>%
-    RunPCA(npcs = 20, verbose = FALSE) %>%
-    harmony::RunHarmony(group.by.vars = c("id", "src", "type"), lambda = c(2, 2, 1)) %>%
-    RunUMAP(reduction = "harmony", dims = 1:20, seed.use = 555) %>%
-    FindNeighbors(reduction = "harmony") %>%
-    FindClusters(resolution = 0.2)
-
-epi <- kill_cc(epi)
-
-# Create a basaloid signature using genes identified in:
-# https://doi.org/10.1038/s41467-022-33193-0
-basaloid <- c(
-    "FOSL1",
-    "CD24",
-    "ITGB8",
-    "KRT17"
-)
-epi <- AddModuleScore(epi, features = basaloid, name = "Basaloid")
-
-qs::qsave(epi, "output/rdata/human_epithelial.qs")
 
 p1 <- r_dim_plot(epi, "Distal Airway - Cell Cycle",
     group.by = "Phase", label = FALSE) +
@@ -426,34 +435,60 @@ p1 <- r_dim_plot(epi, "Distal Airway - Cell Cycle",
     theme(legend.position = "right")
 p2 <- r_dim_plot(epi,
     group.by = "seurat_clusters",
-    split.by = "type") +
-    ggtitle("Distal Airway - Healthy")
-p3 <- r_feature_plot(epi, "FN1")
+    split.by = "type")
+p3 <- r_feature_plot(epi, "AREG", min.cutoff = 2)
 p4 <- r_feature_plot(epi, "KRT17", max.cutoff = 3)
 p5 <- r_feature_plot(epi, "SFTPC", min.cutoff = 5)
-p6 <- r_feature_plot(epi, "PDPN")
-(p1 | p2 ) / (p5 | p6 | p4 | p3)
+p6 <- r_feature_plot(epi, "AGER", min.cutoff = 2)
+(p1 | p2) / (p5 | p6 | p4 | p3)
 
 # Show genes from the basaloid signature identified in:
 # https://doi.org/10.1038/s41467-022-33193-0
-p1 <- r_feature_plot(epi, "FOSL1")
-p2 <- r_feature_plot(epi, "CD24")
-p3 <- r_feature_plot(epi, "ITGB8")
-p1 | p2 | p3
+# https://doi.org/10.1038/s41467-020-17358-3
+# https://doi.org/10.1126/sciadv.aba1983
+r_feature_plot(epi, "FOSL1", split.by = "type")
+r_feature_plot(epi, "CD24", split.by = "type")
+r_feature_plot(epi, "ITGB8", split.by = "type")
 
 # Show markers of activated AEC2
-r_feature_plot(epi, "AREG")
-r_feature_plot(epi, "TP63")
-r_feature_plot(epi, "NTRK2")
+r_feature_plot(epi, "AREG", split.by = "type")
+r_feature_plot(epi, "TP63", min.cutoff = 1, split.by = "type")
+r_feature_plot(epi, "KRT5", split.by = "type")
 
-Idents(epi) <- epi$seurat_clusters
-epi_marks <- FindAllMarkers(epi, test.use = "DESeq2")
+# Perform a global assessment of DEG
+epi_marks <- FindAllMarkers(epi, test.use = "MAST")
 
 gt::gt(epi_marks %>%
     group_by(cluster) %>%
     slice_max(abs(avg_log2FC), n = 20) %>%
     arrange(cluster, -avg_log2FC)) %>%
     gt::tab_header("DEGs in human AECs (by cluster)")
+
+# Assign cell types
+epi <- RenameIdents(epi,
+    `0` = "AEC1",
+    `1` = "AEC2",
+    `2` = "Basaloid",
+    `3` = "pAEC2",
+    `4` = "AEC2",
+    `6` = "Clara",
+    `7` = "Basaloid")
+
+epi$epi_type <- Idents(epi)
+
+p2 <- r_dim_plot(epi,
+    group.by = "epi_type",
+    split.by = "type")
+((p1 | p2) + plot_layout(widths = c(1, 2))) / (p5 | p6 | p4 | p3)
+
+# Consolidate into a summary dotplot
+epi_genes <- c( "SCGB1A1", "AES", "SFTPC", "ABCA3",
+    "AREG", "TP63", "KRT17", "ITGB8", "AGER", "CLIC5")
+epi$epi_type <- factor(epi$epi_type, levels = c("AEC1", "Basaloid", "pAEC2", "AEC2", "Clara"))
+
+DotPlot(epi, features = epi_genes, dot.scale = 8, group.by = "epi_type", cols = c("lightgoldenrod", "darkred")) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+
 ```
 
 # Subcluster macrophages
