@@ -187,7 +187,6 @@ if(!file.exists("output/rdata/met_lungs.qs")) {
             exdir = "GSE152048",
             extras = "--remove-files")
     }
-}
 
 mets_meta <- tribble(
     ~file, ~Sample_Name, ~Sample_Source, ~Sample_Type, ~method,
@@ -214,6 +213,11 @@ met_lung <- mclapply(1:nrow(mets_meta),
         return(s)
     }, mc.cores = parallelly::availableCores())
 names(met_lung) <- mets_meta$Sample_Name
+
+qs::qsave(met_lung, "output/rdata/met_lungs.qs")
+} else {
+    met_lung <- qs::qread("output/rdata/met_lungs.qs")
+}
 ```
 
 # Find and exclude tumor cells from met samples
