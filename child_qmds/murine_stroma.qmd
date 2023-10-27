@@ -1,0 +1,156 @@
+# Epithelial cells from both K7M2 and F480 models
+```{r subset_epithelial_balbc, dependson='add_modules', eval=TRUE}
+# Load both models, merge data, and integrate by model
+if(!file.exists("output/rdata/murine_aec_post-filtering.qs")) {
+    if(!file.exists("output/rdata/murine_aec_pre-filtering.qs")) {
+        balb_k7m2_combined <- qs::qread("output/rdata/balb_k7m2_combined.qs")
+        b6_f420_combined <- qs::qread("output/rdata/b6_f420_combined.qs")
+
+        murine_aec <- merge(
+            subset(balb_k7m2_combined, idents = "Lower Airway"),
+            subset(b6_f420_combined, idents = "Lower Airway"))
+        DefaultAssay(murine_aec) <- "RNA"
+
+        murine_aec$model <- murine_aec$sample
+        murine_aec$model[murine_aec$model == "F420"] <- "C57BL6"
+        murine_aec$model[murine_aec$model == "K7M2"] <- "BALBC"
+        murine_aec$type <- murine_aec$sample
+        murine_aec$type[murine_aec$type == "F420"] <- "Metastasis"
+        murine_aec$type[murine_aec$type == "K7M2"] <- "Metastasis"
+        murine_aec$type[murine_aec$type == "C57BL6"] <- "Healthy"
+        murine_aec$type[murine_aec$type == "BALBC"] <- "Healthy"
+
+
+        murine_aec <- DietSeurat(murine_aec, assays = "RNA") %>%
+            FindVariableFeatures() %>%
+            ScaleData() %>%
+            RunPCA(npcs = 30, vebose = FALSE) %>%
+            harmony::RunHarmony(group.by.vars = c("model")) %>%
+            RunUMAP(reduction = "harmony", dims = 1:30) %>%
+            FindNeighbors(reduction = "umap", dims = 1:2) %>%
+            FindClusters(resolution = 0.2)
+
+        r_dim_plot(murine_aec)
+        r_dim_plot(murine_aec, group.by = "sample", shuffle = TRUE)
+        r_dim_plot(murine_aec, group.by = "type", shuffle = TRUE)
+
+
+        # Remove contaminating non-epithelial and immune cells
+        murine_aec_marks <- FindAllMarkers(murine_aec)
+
+        gt::gt(murine_aec_marks %>%
+            group_by(cluster) %>%
+            slice_max(avg_log2FC, n = 20) %>%
+            arrange(cluster, -avg_log2FC)) %>%
+            gt::tab_header("DEGs in human AECs (by cluster)")
+
+        r_dim_plot(murine_aec, group.by = "cell_type", repel = TRUE)
+
+        qs::qsave(murine_aec,
+            "output/rdata/murine_aec_pre-filtering.qs")
+    } else {
+        murine_aec <- qs::qread("output/rdata/murine_aec_pre-filtering.qs")
+    }
+    murine_aec <- subset(murine_aec,
+        idents = c("4", "5", "9", "10", "11", "12"),
+        invert = TRUE)
+    murine_aec <- subset(murine_aec,
+        subset = cell_type == c("Mono", "Int Mf", "Alv Mf"),
+        invert = TRUE)
+
+    # Repeat processing with the cleaned-up dataset
+    murine_aec <- murine_aec %>%
+        FindVariableFeatures() %>%
+        ScaleData() %>%
+        RunPCA(npcs = 30, vebose = FALSE) %>%
+        harmony::RunHarmony(group.by.vars = c("model")) %>%
+        RunUMAP(reduction = "harmony", dims = 1:30, seed.use = 222) %>%
+        FindNeighbors(reduction = "umap", dims = 1:2) %>%
+        FindClusters(resolution = 0.15)
+
+    r_dim_plot(murine_aec)
+    r_dim_plot(murine_aec, group.by = "cell_type", repel = TRUE)
+
+    # Still some upper airway cells carried over--remove them
+    murine_aec <- subset(murine_aec, idents = "4", invert = TRUE)
+
+    # Repeat processing with the cleaned-up dataset
+    murine_aec <- murine_aec %>%
+        FindVariableFeatures() %>%
+        ScaleData() %>%
+        RunPCA(npcs = 30, vebose = FALSE) %>%
+        harmony::RunHarmony(group.by.vars = c("model")) %>%
+        RunUMAP(reduction = "harmony", dims = 1:30, seed.use = 888) %>%
+        FindNeighbors(reduction = "umap", dims = 1:2) %>%
+        FindClusters(resolution = 0.15)
+
+    r_dim_plot(murine_aec)
+    r_dim_plot(murine_aec, group.by = "cell_type", repel = TRUE)
+
+    qs::qsave(murine_aec,
+        "output/rdata/murine_aec_post-filtering.qs")
+} else {
+    murine_aec <- qs::qread("output/rdata/murine_aec_post-filtering.qs")
+}
+
+r_dim_plot(murine_aec)
+r_dim_plot(murine_aec, group.by = "sample", shuffle = TRUE)
+r_dim_plot(murine_aec, group.by = "type", shuffle = TRUE)
+r_dim_plot(murine_aec, group.by = "cell_type", repel = TRUE)
+
+murine_aec_marks_2 <- FindAllMarkers(murine_aec)
+
+gt::gt(murine_aec_marks_2 %>%
+    group_by(cluster) %>%
+    slice_max(avg_log2FC, n = 20) %>%
+    arrange(cluster, -avg_log2FC)) %>%
+    gt::tab_header("DEGs in human AECs (by cluster)")
+
+# Create the expression dot plot
+gl <- c("Sftpa1", "Sftpc", "Lgi3",
+"Lcn2", "Lrg1", "Glrx",
+"Top2a", "Mki67", "Cenpf",
+"Areg", "Krt8", "Cdkn1a",
+"Pdpn", "Hopx", "Cav1")
+
+DotPlot(murine_aec, features = gl, cols = c("lightgoldenrod", "darkred")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+# Cluster identification based on published data sets
+# https://doi.org/10.1038/s41467-020-17358-3
+# https://doi.org/10.1038/s41556-020-0542-8
+# https://doi.org/10.1016/j.stem.2020.06.020
+murine_aec <- RenameIdents(murine_aec,
+    `0` = "DATP",
+    `1` = "AEC2",
+    `2` = "DATP",
+    `3` = "pAEC2",
+    `4` = "cAEC2",
+    `5` = "AEC1",
+    `6` = "cAEC2")
+
+murine_aec$aec_type <- Idents(murine_aec)
+murine_aec$aec_type <- factor(murine_aec$aec_type,
+    levels = c("AEC1", "DATP", "cAEC2", "pAEC2", "AEC2"))
+
+DotPlot(murine_aec,
+    features = gl,
+    cols = c("lightgoldenrod", "darkred"),
+    group.by = "aec_type",
+    dot.scale = 8) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+r_dim_plot(murine_aec, split.by = "type")
+r_dim_plot(murine_aec, group.by = "sample", shuffle = TRUE)
+r_dim_plot(murine_aec, group.by = "type", shuffle = TRUE)
+r_dim_plot(murine_aec, group.by = "cell_type", repel = TRUE)
+
+
+
+
+balbc_k7m2_combined.AEC_1$celltype_sample <-
+    paste(Idents(balbc_k7m2_combined.AEC_1),
+          balbc_k7m2_combined.AEC_1$sample,
+          sep = "_")
+balbc_k7m2_combined.AEC_1$celltype <- Idents(balbc_k7m2_combined.AEC_1)
+```
