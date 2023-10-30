@@ -54,3 +54,6 @@ input
 *_cache/
 *_files/
 *.rmarkdown
+
+main_files
+geo_sub

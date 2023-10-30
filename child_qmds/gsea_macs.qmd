@@ -203,30 +203,26 @@ tumor_only <-
                    name = "kegg_ribo_module")
 
 tumor_only %>%
-    subset(clust_2 %in% c("clust_0.0",
-                          "clust_1.3",
-                          "clust_1.2",
-                          "clust_3.1",
-                          "clust_3.0")) %>%
+    subset(clust_2 %in% c("clust_2.0", #high
+                          "clust_2.1", #high
+                          "clust_0.1", #low
+                          "clust_5.1")) %>% #low
     VlnPlot(split.by = "sample",
             features = "kegg_ribo_module1",
             group.by = "clust_2")
 
-plot_genes <-
-    gsea_out %>%
-    group_by(cluster) %>%
-    filter(p_val_adj <= 0.05) %>%
-    arrange(avg_log2FC, .by_group = TRUE) %>%
-    slice_head(n = 2) %>%
-    pull(gene) %>%
-    unique()
-
 FeaturePlot(immune_recurl,
-            features = plot_genes)
+            features = kegg_ribo_genes[[1]])
 
-DotPlot(immune_recurl, group.by = c("obj_name", "clust_1", "cell_type"),
-        label = TRUE) +
-    NoLegend()
+tumor_only %>%
+    AddMetaData(metadata = paste(tumor_only$clust_2, tumor_only$comp),
+                col.name = "clust_comp") %>%
+    subset(clust_2 %in% c("clust_2.0", #high
+                          "clust_2.1", #high
+                          "clust_0.1", #low
+                          "clust_5.1")) %>% #low
+    DotPlot(features =  unique(kegg_ribo_genes[[1]]),
+            group.by = "clust_comp")
 ```
 
 # Run GSEA to compare each cluster to all others
