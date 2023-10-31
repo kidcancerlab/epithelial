@@ -1,41 +1,96 @@
-# Make a Seurat object of all the data
+# Make a Seurat object of all the data (not corrected for model)
 ```{r merge_all, dependson='load_raw', eval=TRUE}
 sobj_list <- qs::qread("output/rdata/sobj_list.qs")
 all_sobj <-
     merge(sobj_list[[1]],
-          sobj_list[2:length(sobj_list)]) %>%
-    SCTransform(vars.to.regress = "percent.mt",
-                verbose = FALSE,
-                return.only.var.genes = FALSE) %>%
-    RunPCA(verbose = FALSE, assay = "SCT") %>%
-    FindNeighbors(verbose = FALSE) %>%
-    FindClusters(verbose = FALSE) %>%
-    RunUMAP(verbose = FALSE, dims = 1:30)
-
-qs::qsave(all_sobj,
-          file = "output/rdata/all_sobj.qs")
+        sobj_list[2:length(sobj_list)],
+        add.cell.ids = names(sobj_list)) %>%
+    process_seurat()
+qs::qsave(all_sobj, file = "output/rdata/all_sobj.qs")
 
 all_dim <-
-    DimPlot(all_sobj,
-            group.by = c("obj_name", "cell_type"),
-            label = TRUE,
-            repel = TRUE,
-            cols = c(plot_cols, crazy_cols(all_sobj$cell_type, seed = 1341))) +
+    r_dim_plot(all_sobj,
+        group.by = c("obj_name", "cell_type"),
+        label = TRUE,
+        repel = TRUE,
+        shuffle = TRUE) +
     NoLegend()
 
 ggsave("output/figures/all_dim.pdf",
        width = 25,
        height = 8)
+
+all_dim
+DimPlot()
 ```
+
+# Correct the data for model
+```{r harmonize_model, dependson='merge_all', eval=TRUE}
+all_sobj$model <- "BALBC"
+all_sobj$model[
+    all_sobj$sample %in% c("C57BL6", "F420", "tibia_F420")
+    ] <- "C57BL6"
+all_sobj <- all_sobj %>%
+    harmony::RunHarmony(group.by.vars = "model", dims.use = 1:30) %>%
+    RunUMAP(reduction = "harmony", dims = 1:30) %>%
+    FindNeighbors(reduction = "harmony", dims = 1:30) %>%
+    FindClusters(resolution = 0.2)
+
+p1 <- r_dim_plot(all_sobj,
+    group.by = "model",
+    shuffle = TRUE) +
+    theme(legend.position = "right")
+p2 <- r_dim_plot(all_sobj,
+    group.by = "cell_type",
+    shuffle = TRUE,
+    repel = TRUE)
+p3 <- r_dim_plot(all_sobj,
+    group.by = "seurat_clusters")
+p1 + p2 + p3
+
+qs::qsave(all_sobj, "output/rdata/all_sobj_integrated.qs")
+```
+
+
 
 # Grab just macrophages and recursively cluster them
 ```{r immune, dependson='merge_all', eval=TRUE}
-mac_types <-
-    c("Int Mf",
-      "Macrophages",
-      "Macrophages activated")
+if (!file.exists("misc/murine_macs.qs")) {
+    mac_ids <- all_sobj@meta.data %>%
+        filter(cell_type == c(
+            "Monocytes",
+            "Mono",
+            "Int Mf",
+            "Macrophage",
+            "DC1",
+            "DC2"
+        )) %>%
+        rownames()
+    qs::qsave(mac_ids, "misc/murine_macs.qs")
+} else {
+    mac_ids <- qs::qread("misc/murine_macs.qs")
+}
 
-Idents(all_sobj) <- "cell_type"
+macs <- subset(all_sobj, cells = mac_ids) %>%
+    FindVariableFeatures() %>%
+    ScaleData() %>%
+    RunPCA() %>%
+    harmony::RunHarmony(group.by.vars = "model", dims.use = 1:30) %>%
+    RunUMAP(reduction = "harmony", dims = 1:30) %>%
+    FindNeighbors(reduction = "harmony", dims = 1:30) %>%
+    FindClusters(resolution = seq(0.05, 0.8, 0.05))
+
+library(clustree)
+clustree(macs)
+
+# A resolution of 0.3 looks pretty good
+macs$seurat_clusters <- macs$RNA_snn_res.0.3
+Idents(macs) <- macs$seurat_clusters
+
+p1 <- r_dim_plot(macs, group.by = "seurat_clusters")
+p2 <- r_dim_plot(macs, group.by = "cell_type")
+p3 <- r_dim_plot(macs, group.by = "sample")
+p1 + p2 + p3
 
 # This brings in the recurluster function that recursively clusters the cells
 # using silhouette scoring
@@ -172,3 +227,5 @@ ggsave("output/figures/mac_inflam_mod_vln.pdf",
        height = 8,
        plot = imm_mod_vln)
 ```
+
+
