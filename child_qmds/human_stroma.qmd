@@ -429,7 +429,26 @@ if(!file.exists("output/rdata/human_epithelial.qs")) {
         harmony::RunHarmony(group.by.vars = c("src", "type"), lambda = c(1, 1)) %>%
         RunUMAP(reduction = "harmony", dims = 1:20, seed.use = 555) %>%
         FindNeighbors(reduction = "umap", dims = 1:2) %>%
-        FindClusters(resolution = 0.2)
+        FindClusters(resolution = 0.1)
+
+    r_dim_plot(epi)
+    r_dim_plot(epi, group.by = "cell_type")
+
+    # One more cleanup - non-epithelial carryover
+    epi <- subset(epi, idents = c("2", "5", "7"), invert = TRUE)
+
+    # Reprocess the subsetted cells
+    epi <- DietSeurat(epi, assays = "RNA") %>%
+        FindVariableFeatures() %>%
+        ScaleData() %>%
+        RunPCA(npcs = 20, verbose = FALSE) %>%
+        harmony::RunHarmony(group.by.vars = c("id", "type", ), lambda = c(1, 1)) %>%
+        RunUMAP(reduction = "harmony", dims = 1:20, seed.use = 444) %>%
+        FindNeighbors(reduction = "umap", dims = 1:2) %>%
+        FindClusters(resolution = 0.1)
+
+    r_dim_plot(epi)
+    r_dim_plot(epi, group.by = "cell_type")
 
     epi <- kill_cc(epi)
     Idents(epi) <- epi$seurat_clusters
@@ -481,11 +500,11 @@ r_feature_plot(epi, "TP63", min.cutoff = 1, split.by = "type")
 r_feature_plot(epi, "KRT5", split.by = "type")
 
 # Perform a global assessment of DEG
-epi_marks <- FindAllMarkers(epi, test.use = "MAST")
+epi_marks <- FindAllMarkers(epi)
 
 gt::gt(epi_marks %>%
     group_by(cluster) %>%
-    slice_max(abs(avg_log2FC), n = 20) %>%
+    slice_max(avg_log2FC, n = 20) %>%
     arrange(cluster, -avg_log2FC)) %>%
     gt::tab_header("DEGs in human AECs (by cluster)")
 
@@ -512,11 +531,18 @@ wrap_elements(full = p2) / (p5 | p6) / (p4 | p3)
 p2 + p5 + p6 + p4 + p3 + plot_layout(design = layout)
 
 # Consolidate into a summary dotplot
-epi_genes <- c( "SCGB1A1", "AES", "SFTPC", "ABCA3",
+epi_genes <- c("SCGB1A1", "AES", "SFTPC", "ABCA3",
     "AREG", "TP63", "KRT17", "ITGB8", "AGER", "CLIC5")
+
+epi_genes <- c("SFTPA1", "SFTPD", "MUC1",
+# "TOP2A", "MKI67", "CENPF",
+"AREG", "TNC", "LAMB3",
+"KRT17", "TP63", "CDH2",
+"PDPN", "AGER", "CLIC5")
+
 epi$epi_type <- factor(epi$epi_type, levels = c("AEC1", "Basaloid", "pAEC2", "AEC2", "Clara"))
 
-DotPlot(epi, features = epi_genes, dot.scale = 8, group.by = "epi_type", cols = c("lightgoldenrod", "darkred")) +
+DotPlot(epi, features = epi_genes, dot.scale = 8, cols = c("lightgoldenrod", "darkred")) +
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
 
 ```
