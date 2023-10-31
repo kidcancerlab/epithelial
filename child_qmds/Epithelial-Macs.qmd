@@ -92,28 +92,15 @@ p2 <- r_dim_plot(macs, group.by = "cell_type")
 p3 <- r_dim_plot(macs, group.by = "sample")
 p1 + p2 + p3
 
-# This brings in the recurluster function that recursively clusters the cells
-# using silhouette scoring
-source("scripts/recurl.R")
+# Establish groups by tissue type
+macs$tissue <- "unassigned"
+macs$tissue[macs$sample %in% c("tibia_F420", "tibia_K7M2")] <- "Tibia Tumor"
+macs$tissue[macs$sample %in% c("F420", "K7M2")] <- "Lung Met"
+macs$tissue[macs$sample %in% c("C57BL6", "BALBC")] <- "Healthy Lung"
 
-immune_recurl <-
-    subset(all_sobj,
-           idents = mac_types) %>%
-    recurluster(parallel = TRUE,
-                do_plots = FALSE)
+r_dim_plot(macs, split.by = "tissue")
 
-immune_recurl <-
-    immune_recurl %>%
-    SCTransform(vars.to.regress = "percent.mt",
-                verbose = FALSE,
-                return.only.var.genes = FALSE) %>%
-    RunPCA(verbose = FALSE, assay = "SCT") %>%
-    FindNeighbors(verbose = FALSE) %>%
-    FindClusters(verbose = FALSE) %>%
-    RunUMAP(verbose = FALSE, dims = 1:30)
-
-qs::qsave(immune_recurl,
-          file = "output/rdata/immune_recurl.qs")
+qs::qsave(macs, "output/rdata/macs_subclustered.qs")
 ```
 
 # Plot the macrophages
