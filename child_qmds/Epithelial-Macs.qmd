@@ -139,7 +139,7 @@ qs::qsave(macs, "output/rdata/macs_subclustered_cleaned.qs")
 
 p1 <- r_dim_plot(macs, group.by = "seurat_clusters")
 p2 <- r_dim_plot(macs, group.by = "cell_type")
-p3 <- r_dim_plot(macs, group.by = "sample")
+p3 <- r_dim_plot(macs, group.by = "sample", shuffle = TRUE)
 p1 + p2 + p3
 
 r_dim_plot(macs, split.by = "tissue")
@@ -175,8 +175,9 @@ r_dim_plot(macs, group.by = "cell_type", split.by = "tissue")
 # Start with a volcano plot
 tams <- FindMarkers(macs,
         ident.1 = "0",
-        ident.2 = c("1", "4", "8")) %>%
-    arrange(avg_log2FC)
+        ident.2 = c("1")) %>%
+    arrange(avg_log2FC) %>%
+    filter(p_val_adj < 0.05)
 
 # Create a top markers list for labeling
 tams_top10 <- rbind(tams %>% slice_head(n = 10),
@@ -190,26 +191,28 @@ ggplot(tams, aes(avg_log2FC, -log(p_val_adj))) +
 
 # Name the clusters
 macs <- RenameIdents(macs,
-    `0` = "Spp1 Mac",
-    `1` = "Spp1 Mac", # Test change from Intermed mono
+    `0` = "scarMacs",
+    `1` = "ocMacs",
     `2` = "Pre-DC",
     `3` = "Cycling",
-    `4` = "Spp1 Mac",
-    `5` = "Monocyte",
+    `4` = "cMonocyte",
+    `5` = "ncMonocyte",
     `6` = "DC1",
     `7` = "DC2",
-    `8` = "Spp1 Mac",
+    `8` = "angioMacs",
     `9` = "Interstitial")
 
 macs$macs_assignment <- Idents(macs) %>%
-    factor(levels = c("Monocyte", "Spp1 Mac", "Cycling", "Interstitial", "Pre-DC", "DC1", "DC2"))
+    factor(levels = c("cMonocyte", "ncMonocyte", "ocMacs", "Interstitial", "scarMacs", "angioMacs", "Cycling", "Pre-DC", "DC1", "DC2"))
 
 mac_genes <- c(
-    "Plac8", "Spn", "Lst1",  # Tumor infiltrating monocytes
-    "Ms4a7", "Ly6c2",  # Intermediate monocytes
-    "Gpnmb", "Trem2", "Spp1",  # Anti-inflammatory Spp1+ macs
+    "Cxcl10", "Ly6c2", "Ifit3",  # Classical TIMs
+    "Ace", "Spn", "Itgal",  # Nonclassical TIMs
+    "C1qa", "Fos", "Jun",  # Osteoclast-like, https://doi.org/10.1186/s41232-022-00213-x
+    "Lyve1", "Mrc1",  # Tissue resident/interstitial
+    "Trem2", "Cd9", "Gpnmb", "Spp1",  # Scar-associated, see https://doi.org/10.1038/s41586-019-1631-3
+    "Il1a", "Fn1", "Arg1",  # Angio-TAMS
     "Top2a", "Hist1h1b", "Birc5",  # Cycling
-    "Lyve1", "Mrc1",  "Ccl8",  # Tissue resident/interstitial
     "Cd209a", "Il1r2", "H2-Ab1", # Pre-DC
     "Clec9a", "Irf8",  # DC1
     "Fscn1", "Ccl5")  # DC2
@@ -217,27 +220,12 @@ mac_genes <- c(
 DotPlot(macs,
     features = mac_genes,
     group.by = "macs_assignment",
-    cols = c("lightgoldenrodyellow", "darkred")) +
+    cols = "RdBu",
+    col.max = 1.5) +
     scale_y_discrete(limits = rev) +
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
 
-macs_only <- subset(macs, subset = tissue != "Healthy Lung") %>%
-    subset(subset = macs_assignment == "Spp1 Mac")
-
-macs_only_degs <- FindMarkers(macs_only, ident.1 = "Lung Metastasis", group.by = "tissue") %>%
-    arrange(-avg_log2FC)
-
-deg_macs_3 <- FindAllMarkers(macs)
-
-gt::gt(deg_macs_2 %>%
-    group_by(cluster) %>%
-    slice_max(avg_log2FC, n = 20) %>%
-    arrange(cluster, -avg_log2FC)) %>%
-    gt::tab_header(
-        "DEGs in murine tumor-associated monouclear cells (cleaned)")
-
-
-r_dim_plot(macs, group.by = "macs_assignment", split.by = "tissue")
+r_dim_plot(macs, split.by = "tissue")
 ```
 
 ## Look at inflammatory genes in macs
