@@ -550,13 +550,7 @@ DotPlot(epi, features = epi_genes, dot.scale = 8, cols = c("lightgoldenrod", "da
 # Subcluster macrophages
 
 ```{r}
-macs <- subset(lungs,
-    manual_assignments == "Monocyte" |
-    manual_assignments == "Macrophage" |
-    manual_assignments == "Dendritic")
-
-# Filter out a group of type 2 AECs that got carried over in this subset
-
+macs <- subset(lungs, manual_assignments == "Mononuclear")
 
 macs <- DietSeurat(macs, assays = "RNA") %>%
     FindVariableFeatures() %>%
@@ -569,11 +563,7 @@ macs <- DietSeurat(macs, assays = "RNA") %>%
 
 r_dim_plot(macs, "Macrophage Clustering")
 
-macs <- kill_cc(macs)
-
-macs <- AddModuleScore(macs, features = basaloid, name = "Basaloid")
-
-qs::qsave(macs, "output/rdata/human_macsthelial.qs")
+qs::qsave(macs, "output/rdata/human_macs.qs")
 
 p1 <- r_dim_plot(macs,
     group.by = "Phase", label = FALSE) +

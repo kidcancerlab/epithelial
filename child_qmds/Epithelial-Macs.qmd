@@ -78,13 +78,13 @@ macs <- subset(all_sobj, cells = mac_ids) %>%
     harmony::RunHarmony(group.by.vars = "model", dims.use = 1:30) %>%
     RunUMAP(reduction = "harmony", dims = 1:30) %>%
     FindNeighbors(reduction = "harmony", dims = 1:30) %>%
-    FindClusters(resolution = seq(0.05, 0.8, 0.05))
+    FindClusters(resolution = seq(0.1, 0.8, 0.1))
 
 library(clustree)
 clustree(macs)
 
-# A resolution of 0.3 looks pretty good
-macs$seurat_clusters <- macs$RNA_snn_res.0.3
+# A resolution of 0.2 looks pretty good
+macs$seurat_clusters <- macs$RNA_snn_res.0.2
 Idents(macs) <- macs$seurat_clusters
 
 p1 <- r_dim_plot(macs, group.by = "seurat_clusters")
@@ -95,29 +95,57 @@ p1 + p2 + p3
 # Establish groups by tissue type
 macs$tissue <- "unassigned"
 macs$tissue[macs$sample %in% c("tibia_F420", "tibia_K7M2")] <- "Tibia Tumor"
-macs$tissue[macs$sample %in% c("F420", "K7M2")] <- "Lung Met"
+macs$tissue[macs$sample %in% c("F420", "K7M2")] <- "Lung Metastasis"
 macs$tissue[macs$sample %in% c("C57BL6", "BALBC")] <- "Healthy Lung"
-
-r_dim_plot(macs, split.by = "tissue")
 
 qs::qsave(macs, "output/rdata/macs_subclustered.qs")
 ```
 
 # Plot the macrophages
 ```{r macs, dependson='immune', eval=TRUE}
-macs_dim <-
-    DimPlot(immune_recurl,
-            group.by = c("obj_name", "clust_1", "clust_2"),
-            label = TRUE,
-            repel = TRUE,
-            cols = c(plot_cols, crazy_cols(immune_recurl$clust_2, seed = 1341)))
+r_dim_plot(macs, split.by = "tissue")
 
-ggsave("output/figures/mac_dim2.pdf",
-       width = 25,
-       height = 8)
+deg_macs_1 <- FindAllMarkers(macs)
+
+gt::gt(deg_macs_1 %>%
+    group_by(cluster) %>%
+    slice_max(avg_log2FC, n = 20) %>%
+    arrange(cluster, -avg_log2FC)) %>%
+    gt::tab_header(
+        "DEGs in murine tumor-associated monouclear cells (before cleaning)")
+
+# Clean up misclassified clusters
+macs <- subset(macs,
+    idents = c("2", "8", "9", "10", "11", "12", "13"),
+    invert = TRUE)
+
+# Reprocess and plot
+macs <- macs %>%
+    FindVariableFeatures() %>%
+    ScaleData() %>%
+    RunPCA() %>%
+    harmony::RunHarmony(group.by.vars = "model", dims.use = 1:30) %>%
+    RunUMAP(reduction = "harmony", dims = 1:30) %>%
+    FindNeighbors(reduction = "harmony", dims = 1:30) %>%
+    FindClusters(resolution = seq(0.1, 0.8, 0.1))
+
+clustree(macs)
+
+# A resolution of 0.3 looks pretty good
+macs$seurat_clusters <- macs$RNA_snn_res.0.3
+Idents(macs) <- macs$seurat_clusters
+
+qs::qsave(macs, "output/rdata/macs_subclustered_cleaned.qs")
+
+p1 <- r_dim_plot(macs, group.by = "seurat_clusters")
+p2 <- r_dim_plot(macs, group.by = "cell_type")
+p3 <- r_dim_plot(macs, group.by = "sample")
+p1 + p2 + p3
+
+r_dim_plot(macs, split.by = "tissue")
 
 cluster_counts <-
-    table(immune_recurl$obj_name, immune_recurl$clust_2) %>%
+    table(macs$obj_name, macs$seurat_clusters) %>%
     as.data.frame() %>%
     dplyr::rename("Sample" = "Var1",
                   "Cluster" = "Var2",
@@ -128,84 +156,152 @@ cluster_counts <-
     geom_tile() +
     geom_text(aes(label = Count), color = "white")
 
-ggsave("output/figures/mac_cluster_counts2.pdf",
-       width = 8,
-       height = 8)
+cluster_counts
 
-Idents(immune_recurl) <- "clust_2"
+# Re-characterize the subclustered macs
+deg_macs_2 <- FindAllMarkers(macs)
+
+gt::gt(deg_macs_2 %>%
+    group_by(cluster) %>%
+    slice_max(avg_log2FC, n = 20) %>%
+    arrange(cluster, -avg_log2FC)) %>%
+    gt::tab_header(
+        "DEGs in murine tumor-associated monouclear cells (cleaned)")
+
+r_dim_plot(macs, group.by = "cell_type", split.by = "tissue")
+
+# Define the difference between the primary tumor-infiltrating (cluster 1)
+# and the metastasis-infitrating (clusters 0, 4, 8)
+# Start with a volcano plot
+tams <- FindMarkers(macs,
+        ident.1 = "0",
+        ident.2 = c("1", "4", "8")) %>%
+    arrange(avg_log2FC)
+
+# Create a top markers list for labeling
+tams_top10 <- rbind(tams %>% slice_head(n = 10),
+    tams %>% slice_tail(n = 10))
+
+ggplot(tams, aes(avg_log2FC, -log(p_val_adj))) +
+    geom_point() +
+    geom_text_repel(data = tams_top10, aes(avg_log2FC, -log(p_val_adj)),
+        label = rownames(tams_top10)) +
+    theme_roberts()
+
+# Name the clusters
+macs <- RenameIdents(macs,
+    `0` = "Spp1 Mac",
+    `1` = "Spp1 Mac", # Test change from Intermed mono
+    `2` = "Pre-DC",
+    `3` = "Cycling",
+    `4` = "Spp1 Mac",
+    `5` = "Monocyte",
+    `6` = "DC1",
+    `7` = "DC2",
+    `8` = "Spp1 Mac",
+    `9` = "Interstitial")
+
+macs$macs_assignment <- Idents(macs) %>%
+    factor(levels = c("Monocyte", "Spp1 Mac", "Cycling", "Interstitial", "Pre-DC", "DC1", "DC2"))
+
+mac_genes <- c(
+    "Plac8", "Spn", "Lst1",  # Tumor infiltrating monocytes
+    "Ms4a7", "Ly6c2",  # Intermediate monocytes
+    "Gpnmb", "Trem2", "Spp1",  # Anti-inflammatory Spp1+ macs
+    "Top2a", "Hist1h1b", "Birc5",  # Cycling
+    "Lyve1", "Mrc1",  "Ccl8",  # Tissue resident/interstitial
+    "Cd209a", "Il1r2", "H2-Ab1", # Pre-DC
+    "Clec9a", "Irf8",  # DC1
+    "Fscn1", "Ccl5")  # DC2
+
+DotPlot(macs,
+    features = mac_genes,
+    group.by = "macs_assignment",
+    cols = c("lightgoldenrodyellow", "darkred")) +
+    scale_y_discrete(limits = rev) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+macs_only <- subset(macs, subset = tissue != "Healthy Lung") %>%
+    subset(subset = macs_assignment == "Spp1 Mac")
+
+macs_only_degs <- FindMarkers(macs_only, ident.1 = "Lung Metastasis", group.by = "tissue") %>%
+    arrange(-avg_log2FC)
+
+deg_macs_3 <- FindAllMarkers(macs)
+
+gt::gt(deg_macs_2 %>%
+    group_by(cluster) %>%
+    slice_max(avg_log2FC, n = 20) %>%
+    arrange(cluster, -avg_log2FC)) %>%
+    gt::tab_header(
+        "DEGs in murine tumor-associated monouclear cells (cleaned)")
+
+
+r_dim_plot(macs, group.by = "macs_assignment", split.by = "tissue")
 ```
 
 ## Look at inflammatory genes in macs
 ```{r macs_inflam, dependson='macs', eval=TRUE}
 inflam_genes <-
-    c("H2-Eb1", "H2-Ab1", "Cd86", "Il1a", "Il1b", "Cxcl1", "Cxcl2")
+    c("H2-Eb1", "Cd86", "Il1a", "Il1b", "Cxcl1", "Cxcl2")
 
 anti_inflam_genes <-
     c("Gpnmb", "Fabp5", "Anpep", "C1qa", "C1qb", "Fcrls", "Trem2", "Fn1", "Spp1")
 
-infl_macs <-
-    FeaturePlot(immune_recurl,
-                features = inflam_genes)
+r_feature_plot(macs, features = inflam_genes)
 
-ggsave("output/figures/mac_inflam.pdf",
-       width = 8,
-       height = 8,
-       plot = infl_macs)
+VlnPlot(macs,
+    features = inflam_genes,
+    group.by = "seurat_clusters",
+    cols = plot_cols,
+    pt.size = 0,
+    adjust = 0.5)
 
-infl_macs_vln <-
-    VlnPlot(immune_recurl,
-            features = inflam_genes,
-            group.by = "clust_2",
-            cols = c(plot_cols, crazy_cols(immune_recurl$clust_2)),
-            pt.size = 0,
-            adjust = 0.5)
+r_feature_plot(macs, features = anti_inflam_genes)
 
-ggsave("output/figures/mac_inflam_vln.pdf",
-       width = 15,
-       height = 8,
-       plot = infl_macs_vln)
+VlnPlot(macs,
+        features = anti_inflam_genes,
+        group.by = "seurat_clusters",
+        cols = plot_cols,
+        pt.size = 0,
+        adjust = 0.5)
 
-anti_imm_macs <-
-    FeaturePlot(immune_recurl,
-                features = anti_inflam_genes)
+# Pro-fibrotic signatures from
+# https://doi.org/10.1038%2Fs41590-018-0276-y
+# For the human analysis: https://doi.org/10.1016/j.cell.2021.11.033
+#
+fibro_mac_genes <- c("Cx3cr1", "Ccr2", "Mafb", "H2-Ab1", "Pdgfa", "S100a4", "Fosl2")
 
-ggsave("output/figures/mac_anti_inflam.pdf",
-       width = 8,
-       height = 8,
-       plot = anti_imm_macs)
-
-anti_imm_macs_vln <-
-    VlnPlot(immune_recurl,
-            features = anti_inflam_genes,
-            group.by = "clust_2",
-            cols = c(plot_cols, crazy_cols(immune_recurl$clust_2)),
-            pt.size = 0,
-            adjust = 0.5)
+r_feature_plot(macs, fibro_mac_genes)
+DotPlot(macs,
+    features = c(fibro_mac_genes, inflam_genes, anti_inflam_genes),
+    cols = c("lightgoldenrodyellow", "darkred")) +
+    theme(axis.text.x = element_text(angle = 90))
 
 ggsave("output/figures/mac_anti_inflam_vln.pdf",
        width = 15,
        height = 8,
        plot = anti_imm_macs_vln)
 
-immune_recurl <-
-    AddModuleScore(immune_recurl,
+macs <-
+    AddModuleScore(macs,
                    features = list(inflam_genes),
                    name = "inflam_module")
 
-immune_recurl <-
-    AddModuleScore(immune_recurl,
+macs <-
+    AddModuleScore(macs,
                    features = list(anti_inflam_genes),
                    name = "anti_inflam_module")
 
-qs::qsave(immune_recurl,
-          file = "output/rdata/immune_recurl.qs")
+qs::qsave(macs,
+          file = "output/rdata/macs.qs")
 
 imm_mod_vln <-
-    VlnPlot(immune_recurl,
+    VlnPlot(macs,
             features = c("inflam_module1", "anti_inflam_module1"),
             group.by = "clust_2",
             ncol = 1,
-            cols = c(plot_cols, crazy_cols(immune_recurl$clust_2)),
+            cols = c(plot_cols, crazy_cols(macs$clust_2)),
             pt.size = 0,
             adjust = 0.5)
 
