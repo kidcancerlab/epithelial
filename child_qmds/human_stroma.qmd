@@ -652,9 +652,9 @@ gt::gt(macs_marks %>%
 
 mac_features <- c(
     "TREM2", "CD9", "SPP1", "GPNMB",  # Scar-TAMs
-    "MS4A7", "MERTK", # TAMs
+    "MERTK", "MS4A7", # TAMs
     "IFIT2", "IFIT3", "CXCL10", # IFN-TAMS
-    "ACP5", "CCL18", # LA-TAMs
+    "ACP5", "APOC1", "LGALS3", # Lipid-associated
     "IL1B", "CXCL8", "CCL3", # Inflammatory
     "LYVE1", "SELENOP", # Interstitial
     "LST1", "CD52", # ncMonocyte
@@ -671,7 +671,7 @@ mac_features <- c(
 # https://doi.org/10.1126%2Fscience.aah4573
 macs2 <- RenameIdents(macs,
     "1" = "TAMs",
-    "2" = "LA-TAMs",
+    "2" = "Lipid-associated",
     "3" = "Pre-DC",
     "6" = "cMonocyte",
     "4" = "ncMonocyte",
@@ -683,10 +683,10 @@ macs2 <- RenameIdents(macs,
     "16" = "Inflammatory",
     "17" = "Inflammatory",
     "19" = "Inflammatory",
-    "0" = "LA-TAMs",
-    "10" = "LA-TAMs",
-    "11" = "LA-TAMs",
-    "24" = "LA-TAMs",
+    "0" = "Lipid-associated",
+    "10" = "Lipid-associated",
+    "11" = "Lipid-associated",
+    "24" = "Lipid-associated",
     "18" = "IFN-TAMs",
     "8" = "Pre-DC",
     "20" = "DC1",
@@ -700,7 +700,7 @@ macs2$macs_assignment <- factor(Idents(macs2), levels = c(
     "Scar-TAMs",
     "TAMs",
     "IFN-TAMs",
-    "LA-TAMs",
+    "Lipid-associated",
     "Inflammatory",
     "Interstitial",
     "ncMonocyte",
@@ -720,6 +720,8 @@ DotPlot(macs2,
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
 
 r_dim_plot(macs2, split.by = "type", repel = TRUE)
+
+r_feature_plot()
 
 Idents(macs) <- macs$seurat_clusters
 
