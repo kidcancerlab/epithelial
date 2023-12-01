@@ -720,9 +720,4 @@ DotPlot(macs2,
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
 
 r_dim_plot(macs2, split.by = "type", repel = TRUE)
-
-r_feature_plot()
-
-Idents(macs) <- macs$seurat_clusters
-
 ```
