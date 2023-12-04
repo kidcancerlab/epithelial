@@ -442,38 +442,34 @@ if(!file.exists("output/rdata/human_epithelial.qs")) {
         FindNeighbors(reduction = "umap", dims = 1:2) %>%
         FindClusters(resolution = 0.1)
 
-    r_dim_plot(epi)
-    r_dim_plot(epi, group.by = "cell_type")
+    p1 <- r_dim_plot(epi)
+    p2 <- r_dim_plot(epi, group.by = "cell_type", repel = TRUE) +
+        theme(legend.position = "right")
+    p1 | p2
+
+    r_dim_plot(epi, split.by = "type")
+
+    # Perform a global assessment of DEG
+    epi_marks <- FindAllMarkers(epi)
+
+    gt::gt(epi_marks %>%
+        group_by(cluster) %>%
+        slice_max(avg_log2FC, n = 20) %>%
+        arrange(cluster, -avg_log2FC)) %>%
+        gt::tab_header("DEGs in human AECs (by cluster)")
 
     # One more cleanup - non-epithelial carryover
-    epi <- subset(epi, idents = c("2", "5", "7"), invert = TRUE)
+    epi <- subset(epi, idents = c("9", "5", "7"), invert = TRUE)
 
     # Reprocess the subsetted cells
-    epi <- DietSeurat(epi, assays = "RNA") %>%
-        FindVariableFeatures() %>%
-        ScaleData() %>%
-        RunPCA(npcs = 20, verbose = FALSE) %>%
-        harmony::RunHarmony(group.by.vars = c("id", "type", ), lambda = c(1, 1)) %>%
+    epi <- RunPCA(epi, npcs = 20, verbose = FALSE) %>%
+        harmony::RunHarmony(group.by.vars = c("id", "method"), lambda = c(1, 0.5)) %>%
         RunUMAP(reduction = "harmony", dims = 1:20, seed.use = 444) %>%
         FindNeighbors(reduction = "umap", dims = 1:2) %>%
-        FindClusters(resolution = 0.1)
-
-    r_dim_plot(epi)
-    r_dim_plot(epi, group.by = "cell_type")
+        FindClusters(resolution = 0.3)
 
     epi <- kill_cc(epi)
     Idents(epi) <- epi$seurat_clusters
-
-    # Create a basaloid signature using genes identified in:
-    # https://doi.org/10.1038/s41467-022-33193-0
-    # https://doi.org/10.1186/s40246-022-00393-0
-    basaloid <- c(
-        "FOSL1",
-        "CD24",
-        "ITGB8",
-        "KRT17"
-    )
-    epi <- AddModuleScore(epi, features = basaloid, name = "Basaloid")
 
     r_dim_plot(epi, group.by = "type")
     r_dim_plot(epi, group.by = "cell_type")
@@ -534,26 +530,23 @@ epi$epi_type <- Idents(epi)
 p2 <- r_dim_plot(epi,
     group.by = "epi_type",
     split.by = "type")
-layout <- "
-    AA
-    BC
-    DE"
 wrap_elements(full = p2) / (p5 | p6) / (p4 | p3)
-p2 + p5 + p6 + p4 + p3 + plot_layout(design = layout)
 
 # Consolidate into a summary dotplot
-epi_genes <- c("SCGB1A1", "AES", "SFTPC", "ABCA3",
-    "AREG", "TP63", "KRT17", "ITGB8", "AGER", "CLIC5")
-
-epi_genes <- c("SFTPA1", "SFTPD", "MUC1",
-# "TOP2A", "MKI67", "CENPF",
-"AREG", "TNC", "LAMB3",
-"KRT17", "TP63", "CDH2",
-"PDPN", "AGER", "CLIC5")
+epi_genes <- c(
+    "SCGB1A1", "AES", # Clara
+    "SFTPA1", "SFTPD", "MUC1", # AEC2
+    "TOP2A", "MKI67", "CENPF", # cAEC2
+    "AREG", "TP63", "KRT5", "TNC", "LAMB3", # pAEC2
+    "KRT17", "TP63", "CDH2", # Basaloid
+    "PDPN", "AGER", "CLIC5") # AEC1
 
 epi$epi_type <- factor(epi$epi_type, levels = c("AEC1", "Basaloid", "pAEC2", "AEC2", "Clara"))
 
-DotPlot(epi, features = epi_genes, dot.scale = 8, cols = c("lightgoldenrod", "darkred")) +
+DotPlot(epi,
+    features = epi_genes,
+    dot.scale = 8,
+    cols = c("lightgoldenrod", "darkred")) +
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
 
 ```
