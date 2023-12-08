@@ -475,6 +475,9 @@ if(!file.exists("output/rdata/human_epithelial.qs")) {
     r_dim_plot(epi, group.by = "cell_type")
     r_dim_plot(epi)
 
+# One last cleanup of non-epithelial cells
+epi <- subset(epi, idents = "8", invert = T)
+
     qs::qsave(epi, "output/rdata/human_epithelial.qs")
 } else {
     epi <- qs::qread("output/rdata/human_epithelial.qs")
@@ -516,37 +519,39 @@ gt::gt(epi_marks %>%
     gt::tab_header("DEGs in human AECs (by cluster)")
 
 # Assign cell types
-epi <- RenameIdents(epi,
-    `0` = "AEC1",
-    `1` = "AEC2",
+epi2 <- RenameIdents(epi,
+    `0` = "AEC2",
+    `1` = "AEC1",
     `2` = "Basaloid",
     `3` = "pAEC2",
-    `4` = "AEC2",
-    `6` = "Clara",
-    `7` = "Basaloid")
+    `4` = "Basaloid",
+    `5` = "AEC2",
+    `6` = "cAEC2",
+    `7` = "Basaloid",
+    `9` = "cAEC2",
+    `10` = "cAEC2")
 
-epi$epi_type <- Idents(epi)
+epi2$epi_type <- Idents(epi2)
 
-p2 <- r_dim_plot(epi,
+r_dim_plot(epi2,
     group.by = "epi_type",
     split.by = "type")
-wrap_elements(full = p2) / (p5 | p6) / (p4 | p3)
 
 # Consolidate into a summary dotplot
 epi_genes <- c(
-    "SCGB1A1", "AES", # Clara
-    "SFTPA1", "SFTPD", "MUC1", # AEC2
+    "SFTPA1", "SFTPC", "PGC", # AEC2
+    "AREG", "MUC1", # pAEC2
     "TOP2A", "MKI67", "CENPF", # cAEC2
-    "AREG", "TP63", "KRT5", "TNC", "LAMB3", # pAEC2
-    "KRT17", "TP63", "CDH2", # Basaloid
-    "PDPN", "AGER", "CLIC5") # AEC1
+    "KRT17", "CDH2", "LAMB3", "FN1", # Basaloid
+    "AGER", "CAV1", "CLDN18") # AEC1
 
-epi$epi_type <- factor(epi$epi_type, levels = c("AEC1", "Basaloid", "pAEC2", "AEC2", "Clara"))
+epi2$epi_type <- factor(epi2$epi_type, levels = c("AEC1", "Basaloid", "cAEC2", "pAEC2", "AEC2", 0:12))
 
-DotPlot(epi,
+DotPlot(epi2,
     features = epi_genes,
+    group.by = "epi_type",
     dot.scale = 8,
-    cols = c("lightgoldenrod", "darkred")) +
+    cols = "RdBu") +
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
 
 ```
