@@ -37,41 +37,39 @@ if(file.exists("misc/balb_k7m2_assignments.qs")) {
     # This list is manually curated from the SingleR assignments and scores
     # If run again, this needs to be checked for accuracy, as clusters may change
     balb_k7m2_combined <- RenameIdents(balb_k7m2_combined,
-        `0` = "Alv Mac",
-        `1` = "Mac",
-        `2` = "Mac",
-        `3` = "Alv Mac",
-        `4` = "Endo",
-        `5` = "DC",
-        `6` = "B",
-        `7` = "NK/T",
-        `8` = "K7M2",
-        `9` = "Lower Airway",
-        `10` = "NK/T",
-        `11` = "K7M2",
-        `12` = "Granulo",
-        `13` = "Mono",
-        `14` = "Endo",
-        `15` = "Endo",
-        `16` = "NK/T",
-        `17` = "NK/T",
-        `18` = "Granulo",
-        `19` = "NK/T",
-        `20` = "Mac",
-        `21` = "Fibroblast",
-        `22` = "SMC",
-        `23` = "Upper Airway",
-        `24` = "Lower Airway",
-        `25` = "Alv Mac",
-        `26` = "Endo",
-        `27` = "Erythro",
-        `28` = "Adipo",
-        `29` = "Alv Mac",
+        `0` = "Monocyte/Macrophage",
+        `1` = "Alveolar macrophage",
+        `2` = "Alveolar macrophage",
+        `3` = "Endothelial cell",
+        `4` = "Monocyte/Macrophage",
+        `5` = "B cell",
+        `6` = "Dendritic cell",
+        `7` = "Distal airway cell",
+        `8` = "T/NK cell",
+        `9` = "T/NK cell",
+        `10` = "K7M2",
+        `11` = "T/NK cell",
+        `12` = "Monocyte/Macrophage",
+        `13` = "K7M2",
+        `14` = "Granulocyte",
+        `15` = "Endothelial cell",
+        `16` = "Endothelial cell",
+        `17` = "T/NK cell",
+        `18` = "Granulocyte",
+        `19` = "Monocyte/Macrophage",
+        `20` = "Fibroblast",
+        `21` = "Smooth muscle cell",
+        `22` = "Upper airway cell",
+        `23` = "Alveolar macrophage",
+        `24` = "Endothelial cell",
+        `25` = "Adipocyte",
+        `26` = "Alveolar macrophage",
+        `27` = "Alveolar macrophage",
+        `28` = "LowQ",
+        `29` = "Dendritic cell",
         `30` = "LowQ",
-        `31` = "DC",
-        `32` = "LowQ",
-        `33` = "LowQ",
-        `34` = "Peri")
+        `31` = "LowQ",
+        `32` = "Pericyte")
 
     balb_k7m2_combined$cell_type_final <- Idents(balb_k7m2_combined)
 
@@ -81,10 +79,14 @@ if(file.exists("misc/balb_k7m2_assignments.qs")) {
     qs::qsave(balb_k7m2_assignments, file = "misc/balb_k7m2_assignments.qs")
 }
 
+p1 <- r_dim_plot(balb_k7m2_combined, group.by = "cell_type_final")
+p2 <- r_dim_plot(balb_k7m2_combined, group.by = "seurat_clusters")
+p1 | p2
+
 # Remove tumor cells, low quality cells, and erythrocytes
 Idents(balb_k7m2_combined) <- balb_k7m2_combined$cell_type_final
 balb_k7m2_combined <- subset(balb_k7m2_combined,
-    idents = c("LowQ", "Erythro", "K7M2"),
+    idents = c("LowQ", "K7M2"),
     invert = TRUE)
 
 # Plot and save
@@ -97,6 +99,8 @@ ggsave("output/figures/combined_balb_k7m2.pdf",
     height = 6)
 
 qs::qsave(balb_k7m2_combined, "output/rdata/balb_k7m2_combined.qs")
+
+
 
 # Create frequency plots of stromal and immune cells
 subset(balb_k7m2_combined,
