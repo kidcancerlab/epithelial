@@ -100,7 +100,37 @@ ggsave("output/figures/combined_balb_k7m2.pdf",
 
 qs::qsave(balb_k7m2_combined, "output/rdata/balb_k7m2_combined.qs")
 
+mouse_marks <- c(
+    "Itgam", "Fcgr1", "Cx3cr1", # Monocyte/Macrophage
+    "Cd68", "Itgax", "Mertk", # Alveolar macrophage
+    "Pecam1", "Tek", "Ptprb", # Endothelial
+    "Cd3d", "Itk", "Tcf7", # T/NK cell
+    "Cd209a", "Ccl17", "Etv3", # Dendritic cell
+    "Foxl1", "Scgb1a1", "Epcam", # Proximal airway
+    "Sftpd", "Ager", "Aqp5", # Distal airway
+    "Pdgfra", "Ltbp4", "Gsn", # Fibroblast
+    "Mgp", "Myh11", "Acta2", # Smooth muscle
+    "Cd19", "Cd79a", "Pax5", # B cell
+    "Csf3r", "S100a9", "Mxd1", # Granulocyte
+    "Apoc1", "Adipoq", "Retn", # Adipocyte
+    "Postn", "Pde5a", "Pdzd2" # Pericyte
+)
 
+balb_k7m2_combined$cell_type_final <- factor(
+    balb_k7m2_combined$cell_type_final,
+    levels = c("Monocyte/Macrophage", "Alveolar macrophage", "Endothelial cell",
+        "T/NK cell", "Dendritic cell", "Upper airway cell",
+        "Distal airway cell", "Fibroblast", "Smooth muscle cell", "B cell",
+        "Granulocyte", "Adipocyte", "Pericyte"))
+
+DotPlot(balb_k7m2_combined,
+    features = mouse_marks,
+    group.by = "cell_type_final",
+    cols = "RdBu",
+    col.max = 1.5) +
+    scale_y_discrete(limits = rev) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+    coord_fixed()
 
 # Create frequency plots of stromal and immune cells
 subset(balb_k7m2_combined,
