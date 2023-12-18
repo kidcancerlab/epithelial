@@ -68,100 +68,81 @@ annotate <- function(sobject,
 # Load the normal human lung data
 GSE227136 contains a very large control normal lung dataset. We will extract normal lung scRNA-seq from this.
 
-The download will contain all of the lung sets (diseased and normal). We will keep only the healthy lung samples processed at TGen--these were not sorted like those processed at Vanderbilt, so match our datasets better. We will also keep only the never-smokers. This reduces our sample to the following list of sample names: THD0002, THD0006, THD0010, THD0014, VUHD69, VUHD076.
+The download will contain a subset of the normal lung tissue samples, balanced for whole cell and nucleus based RNAseq, from the Human Lung Cell Atlas project.
 
 NOTE: If you haven't already downloaded and processed, you might need to run this step on a himem node.
 
+
 ```{r}
-# Check to see if we've already downloaded and processed whole cell normal lung
-if(!file.exists("output/rdata/normal_lung_fresh.qs")) {
-    # Download the files
-    if(!dir.exists("GSE227136")) {
-        dir.create("GSE227136")
+if(!file.exists("hlca/nl_lung.qs")) {
+    if (!file.exists("/gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.qs")) {
+        options(
+            reticulate.conda_binary = "/gpfs0/export/apps/easybuild/software/Miniconda3/4.9.2/condabin/conda",
+            SCP_env_name = "r")
+        library(SCP)
+        library(reticulate)
+        sc <- import("scanpy")
+
+        # Download the annotated full dataset from the Human Lung Cell Atlas project
+        # https://doi.org/10.1038/s41591-023-02327-2
+        system(
+            "curl https://datasets.cellxgene.cziscience.com/3ab47484-a3eb-4f6a-beea-670e1a8fc1e8.h5ad --output /gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.h5ad"
+        )
+
+        # Need to invoke BPCells to handle the large object until we simplify
+        hlca.data <- BPCells::open_matrix_anndata_hdf5(
+            path = "/gpfs0/home2/gdrobertslab/rxr014/hlca.h5ad"
+        )
+
+        # Write the matrix to a directory
+        BPCells::write_matrix_dir(mat = hlca.data, dir = "hlca/")
+
+        # Now that we have the matrix on disk, we can load it
+        hlca.mat <- BPCells::open_matrix_dir(dir = "hlca/")
+        hlca.mat <- Azimuth:::ConvertEnsembleToSymbol(mat = hlca.mat, species = "human")
+        hlca.meta <- Azimuth::LoadH5ADobs("/gpfs0/home2/gdrobertslab/rxr014/hlca.h5ad")
+
+        # Create Seurat object (just metadata and raw counts)
+        hlca <- SeuratObject::CreateSeuratObject(counts = hlca.mat, meta.data = hlca.meta)
+
+        # Write the simplified Seurat object
+        qs::qsave(hlca, "/gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.qs")
+
+    } else {
+        hlca <- qs::qread("/gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.qs")
     }
 
-    if(!file.exists("GSE227136/GSE227136.rds")) {
-        options(timeout = 1800)
-        download.file("https://ftp.ncbi.nlm.nih.gov/geo/series/GSE227nnn/GSE227136/suppl/GSE227136%5FILD%5Fall%5Fcelltypes%5FSeurat.rds.gz",
-            destfile = "GSE227136/GSE227136.rds.gz")
-        R.utils::gunzip("GSE227136/GSE227136.rds.gz")
-    }
+    cases <- as.data.frame(hlca@meta.data) %>%
+        select(
+            sample,
+            age_or_mean_of_age_range,
+            smoking_status,
+            subject_type,
+            tissue,
+            lung_condition,
+            assay,
+            fresh_or_frozen
+            ) %>%
+        filter(
+            !tissue %in% c("respiratory airway", "nose"),
+            lung_condition == "Healthy",
+            assay == "10x 3' v3",
+            age_or_mean_of_age_range > 1,
+            smoking_status != 0
+            ) %>%
+        unique()
 
-    # Make a list of the normal lung sample names
-    normal_names <- c("THD0002", "THD0006", "THD0010", "THD0014", "VUHD69", "VUHD076")
+    table(cases$fresh_or_frozen)
 
-    # Isolate the normal lung whole cell datasets
-    normal_lung_cell <- readRDS("GSE227136/GSE227136.rds") %>%
-        subset(Sample_Name %in% normal_names)
-    DefaultAssay(normal_lung_cell) <- "RNA"
-    normal_lung_cell@meta.data <- normal_lung_cell@meta.data %>%
-        rename(id = Short_Sample_Name,
-            sex = Gender,
-            age = Age,
-            smoking = Tobacco,
-            cell_type = manual_annotation_1) %>%
-            mutate(src = "GSE227136",
-                method = "cell",
-                type = "Healthy") %>%
-            select(nCount_RNA, nFeature_RNA, percent.mt, id, sex, age, smoking, cell_type, src,
-                method, type, )
-    normal_lung_cell <- DietSeurat(normal_lung_cell, assays = "RNA") %>%
-        NormalizeData() %>%
-        SplitObject(split.by = "id")
+    nl_lung <- subset(hlca, subset = sample %in% cases$sample)
 
-    qs::qsave(normal_lung_cell, "output/rdata/normal_lung_fresh.qs")
+    nl_lung <- SplitObject(nl_lung, split.by = "sample")
+
+    qs::qsave(nl_lung, "hlca/nl_lung.qs")
 
 } else {
-
-    normal_lung_cell <- qs::qread("output/rdata/normal_lung_fresh.qs")
-
+    nl_lung <- qs::qread("hlca/nl_lung.qs")
 }
-
-# Check to see if we've already downloaded and processed frozen normal lung
-# from https://doi.org/10.15252/embj.20105114
-if(!file.exists("output/rdata/normal_lung_nuclei.qs")) {
-    # Download the files
-    if(!dir.exists("Lukassen")) {
-        dir.create("Lukassen")
-    }
-
-    if(!file.exists("Lukassen/counts.csv")) {
-        options(timeout = 1800)
-        download.file("https://figshare.com/ndownloader/files/21999237",
-            destfile = "Lukassen/counts.csv")
-        download.file("https://figshare.com/ndownloader/files/21999240",
-            destfile = "Lukassen/metadata.csv")
-    }
-
-    # Isolate the normal lung datasets (frozen)
-    c <- data.table::fread("Lukassen/counts.csv") %>%
-        data.frame(row.names = 1)
-    m <- read.csv("Lukassen/metadata.csv") %>%
-        rename(id = ID,
-            sex = Sex,
-            age = Age,
-            smoking = Smoking,
-            cell_type = Cell.type,
-            percent.mt = MT.ratio,
-            nFeature_RNA = Gene.count,
-            nCount_RNA = UMI.count) %>%
-            mutate(src = "Lukassen",
-                method = "nucleus",
-                type = "Healthy")
-    colnames(c) <- rownames(m)
-    normal_lung_nuclei <- CreateSeuratObject(counts = c, assay = "RNA", meta.data = m) %>%
-        NormalizeData() %>%
-        SplitObject(split.by = "id")
-
-    qs::qsave(normal_lung_nuclei, "output/rdata/normal_lung_nuclei.qs")
-
-} else {
-
-    normal_lung_nuclei <- qs::qread("output/rdata/normal_lung_nuclei.qs")
-
-}
-
-normal_lung <- c(normal_lung_cell, normal_lung_nuclei)
 ```
 
 # Load the osteosarcoma lung metastases
@@ -313,15 +294,15 @@ Need to rewrite to make integration conditional on having been previously run***
 if(!file.exists("output/rdata/integrated_lungs.qs")) {
     # Merge the normal and metastatic lung data into a single object
     # Downsample the normal lung data
-    for(i in seq_along(normal_lung)) {
-        normal_lung[[i]] <- subset(normal_lung[[i]], downsample = 1000)
+    for(i in seq_along(nl_lung)) {
+        nl_lung[[i]] <- subset(nl_lung[[i]], downsample = 1000)
     }
 
     param <- BiocParallel::MulticoreParam(workers = parallelly::availableCores() - 1)
 
-    lungs <- merge(normal_lung[[1]],
-            c(normal_lung[2:length(normal_lung)], met_stroma),
-            add.cell.ids = c(names(normal_lung), names(met_stroma))) %>%
+    lungs <- merge(nl_lung[[1]],
+            c(nl_lung[2:length(nl_lung)], met_stroma),
+            add.cell.ids = c(names(nl_lung), names(met_stroma))) %>%
         ScaleData() %>%
         FindVariableFeatures() %>%
         RunPCA(npcs = 30, verbose = FALSE) %>%
@@ -332,7 +313,8 @@ if(!file.exists("output/rdata/integrated_lungs.qs")) {
 
     lungs <- annotate(lungs)
 
-        qs::qsave(lungs, "output/rdata/integrated_lungs.qs")
+    qs::qsave(lungs, "output/rdata/integrated_lungs.qs")
+
 } else {
     lungs <- qs::qread("output/rdata/integrated_lungs.qs")
 }
@@ -718,4 +700,6 @@ DotPlot(macs2,
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
 
 r_dim_plot(macs2, split.by = "type", repel = TRUE)
+
+Idents(macs) <- macs$seurat_clusters
 ```
