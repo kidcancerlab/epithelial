@@ -72,7 +72,6 @@ The download will contain a subset of the normal lung tissue samples, balanced f
 
 NOTE: If you haven't already downloaded and processed, you might need to run this step on a himem node.
 
-
 ```{r}
 if(!file.exists("hlca/nl_lung.qs")) {
     if (!file.exists("/gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.qs")) {
@@ -135,6 +134,7 @@ if(!file.exists("hlca/nl_lung.qs")) {
     table(cases$fresh_or_frozen)
 
     nl_lung <- subset(hlca, subset = sample %in% cases$sample)
+    nl_lung$type <- "Healthy"
 
     nl_lung <- SplitObject(nl_lung, split.by = "sample")
 
@@ -207,20 +207,20 @@ qs::qsave(met_lung, "output/rdata/met_lungs.qs")
 
 NOTE: if tumor cells have not been previously assigned for any of the samples, this script will error out with a message to run that code and create those samples before proceding.
 ```{r}
-if(!file.exists("output/rdata/met_lung_annotated.qs")) {
-    met_lung <- mclapply(seq_along(met_lung), function(s) {
-        message(paste("Starting sample", names(met_lung)[s], "..."))
-        o <- process_seurat(met_lung[[s]]) %>%
-            annotate()
-        message(paste0("Completed" , names(met_lung)[s], "."))
-        return(o)
-    }, mc.cores = parallelly::availableCores())
-    names(met_lung) <- mets_meta$Sample_Name
+# if(!file.exists("output/rdata/met_lung_annotated.qs")) {
+#     met_lung <- mclapply(seq_along(met_lung), function(s) {
+#         message(paste("Starting sample", names(met_lung)[s], "..."))
+#         o <- process_seurat(met_lung[[s]]) %>%
+#             annotate()
+#         message(paste0("Completed" , names(met_lung)[s], "."))
+#         return(o)
+#     }, mc.cores = parallelly::availableCores())
+#     names(met_lung) <- mets_meta$Sample_Name
 
-    qs::qsave(met_lung, "output/rdata/met_lung_annotated.qs")
-} else {
-    met_lung <- qs::qread("output/rdata/met_lung_annotated.qs")
-}
+#     qs::qsave(met_lung, "output/rdata/met_lung_annotated.qs")
+# } else {
+#     met_lung <- qs::qread("output/rdata/met_lung_annotated.qs")
+# }
 
 # Check to see if all of the relevant annotation files are present
 file_check <- TRUE
@@ -240,12 +240,13 @@ if (file_check) {
             "misc/",
             names(met_lung)[i],
             "-tumor_assignments.qs"))
-        # s <- subset(met_lung[[i]], tumor == "stroma")
-        # return(s)
-        return(met_lung[[i]]) # Intended to be temporary while I work through the tumor cell filtering
+        s <- subset(met_lung[[i]], tumor == "stroma") %>%
+            DietSeurat()
+        return(s)
     })
 
     names(met_stroma) <- names(met_lung)
+
 } else {
     # Skip this code if all files are present, otherwise will need to
     # be run manually to produce the annotation files
@@ -283,7 +284,6 @@ if (file_check) {
     qs::qsave(met_lung[[i]]$tumor,
         paste0("misc/", names(met_lung)[i], "-tumor_assignments.qs"))
 }
-
 ```
 
 # Combine datasets from normal and met
@@ -296,19 +296,33 @@ if(!file.exists("output/rdata/integrated_lungs.qs")) {
     # Downsample the normal lung data
     for(i in seq_along(nl_lung)) {
         nl_lung[[i]] <- subset(nl_lung[[i]], downsample = 1000)
-    }
+        nl_lung[[i]][["RNA"]]$counts <- as(nl_lung[[i]][["RNA"]]$counts,
+            Class = "dgCMatrix")
+        nl_lung[[i]] <- NormalizeData(nl_lung[[i]])}
 
-    param <- BiocParallel::MulticoreParam(workers = parallelly::availableCores() - 1)
+    nl_lung <- merge(nl_lung[[1]], nl_lung[2:length(nl_lung)],
+        add.cell.ids = names(nl_lung)) %>%
+        JoinLayers()
+    nl_lung$id <- nl_lung$sample
 
-    lungs <- merge(nl_lung[[1]],
-            c(nl_lung[2:length(nl_lung)], met_stroma),
-            add.cell.ids = c(names(nl_lung), names(met_stroma))) %>%
+    met_stroma <- merge(met_stroma[[1]], met_stroma[2:length(met_stroma)],
+        add.cell.ids = names(met_stroma)) %>%
+        JoinLayers()
+
+    keep_features <- intersect(rownames(nl_lung), rownames(met_stroma))
+
+    nl_lung <- nl_lung[rownames(nl_lung) %in% keep_features, ]
+    met_stroma <- met_stroma[rownames(met_stroma) %in% keep_features, ]
+
+    lungs <- merge(met_stroma, nl_lung) %>%
+        JoinLayers() %>%
+        NormalizeData() %>%
         ScaleData() %>%
         FindVariableFeatures() %>%
         RunPCA(npcs = 30, verbose = FALSE) %>%
         harmony::RunHarmony(group.by.vars = c("id")) %>%
         RunUMAP(reduction = "harmony", dims = 1:30) %>%
-        FindNeighbors(reduction = "umap", dims = 1:2) %>%
+        FindNeighbors(reduction = "harmony", dims = 1:30) %>%
         FindClusters(resolution = 0.2)
 
     lungs <- annotate(lungs)
@@ -321,12 +335,14 @@ if(!file.exists("output/rdata/integrated_lungs.qs")) {
 
 p1 <- r_dim_plot(subset(lungs, type == "Healthy"),
     group.by = "cell_type",
+    repel = TRUE,
     shuffle = TRUE)
 p2 <- r_dim_plot(subset(lungs, type == "Metastasis"),
     group.by = "annotations",
+    repel = TRUE,
     shuffle = TRUE)
 p3 <- r_dim_plot(lungs, "Integrated Stroma")
-p1 | p2 | p3
+p3 | p1 | p2
 
 # Perform a semi-automated, manually verified cell type assignment
 if(!file.exists("misc/lungs_manual_assignment.qs")) {
@@ -338,32 +354,36 @@ if(!file.exists("misc/lungs_manual_assignment.qs")) {
         arrange(seurat_clusters, -n))
 
     lungs <- RenameIdents(lungs,
-        `0` = "Endothelial",
-        `1` = "Mononuclear",
-        `2` = "Alveolar Epithelial",
-        `3` = "Mononuclear",
-        `4` = "Mononuclear",  # Tumor carryover?
-        `5` = "T/NK",
-        `6` = "Alveolar Epithelial",
-        `7` = "T/NK",
-        `8` = "Fibroblast",
-        `9` = "Mononuclear",
-        `10` = "Alveolar Epithelial",
-        `11` = "Alveolar Epithelial",
-        `12` = "Alveolar Epithelial",
-        `13` = "Mononuclear",
-        `14` = "T/NK",
-        `15` = "Airway Epithelial",
-        `16` = "Mononuclear",  # Tumor carryover?
-        `17` = "Mononuclear",  # Stem/proliferating?
-        `18` = "Granulocyte",
-        `19` = "B",
-        `20` = "Mononuclear",  # Stem/proliferating?
-        `21` = "Alveolar Epithelial",
-        `22` = "B",
-        `23` = "Endothelial",
-        `24` = "Endothelial",
-        `25` = "T/NK")
+        `0` = "Distal airway cells",
+        `1` = "Endothelial",
+        `2` = "Monocyte/Macrophage",
+        `3` = "Fibroblast",
+        `4` = "T/NK Cell",
+        `5` = "Monocyte/Macrophage",
+        `6` = "Monocyte/Macrophage",
+        `7` = "T/NK Cell",
+        `8` = "T/NK Cell",
+        `9` = "Fibroblast",
+        `10` = "Distal airway cell",
+        `11` = "T/NK Cell",
+        `12` = "Distal airway cell",
+        `13` = "",
+        `14` = "Stem/proliferating",
+        `15` = "Smooth muscle cell",
+        `16` = "Monocyte/Macrophage",
+        `17` = "Granulocyte",
+        `18` = "Proximal airway cell",
+        `19` = "Fibroblast",
+        `20` = "",
+        `21` = "B cell",
+        `22` = "Endothelial cell",
+        `23` = "",
+        `24` = "",
+        `25` = "B cell",
+        `26` = "",
+        `27` = "",
+        `28` = "Endothelial cell",
+        `29` = "")
 
     lungs$manual_assignments <- Idents(lungs)
     Idents(lungs) <- lungs$seurat_clusters
