@@ -38,6 +38,8 @@ library(rrrSingleCellUtils)
 library(msigdbr)
 library(parallel)
 
+options(Seurat.object.assay.version = "v4")
+
 # Set random generator seed to facilitate reproducibility
 set.seed(888)
 ```
