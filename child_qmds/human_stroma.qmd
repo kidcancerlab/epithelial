@@ -304,6 +304,7 @@ if(!file.exists("output/rdata/integrated_lungs.qs")) {
         add.cell.ids = names(nl_lung)) %>%
         JoinLayers()
     nl_lung$id <- nl_lung$sample
+    nl_lung$method <- nl_lung$suspension_type
 
     met_stroma <- merge(met_stroma[[1]], met_stroma[2:length(met_stroma)],
         add.cell.ids = names(met_stroma)) %>%
@@ -354,36 +355,36 @@ if(!file.exists("misc/lungs_manual_assignment.qs")) {
         arrange(seurat_clusters, -n))
 
     lungs <- RenameIdents(lungs,
-        `0` = "Distal airway cells",
+        `0` = "Distal airway cell",
         `1` = "Endothelial",
-        `2` = "Monocyte/Macrophage",
+        `2` = "Myeloid",
         `3` = "Fibroblast",
         `4` = "T/NK Cell",
-        `5` = "Monocyte/Macrophage",
-        `6` = "Monocyte/Macrophage",
+        `5` = "Myeloid",
+        `6` = "Myeloid",
         `7` = "T/NK Cell",
         `8` = "T/NK Cell",
         `9` = "Fibroblast",
         `10` = "Distal airway cell",
         `11` = "T/NK Cell",
         `12` = "Distal airway cell",
-        `13` = "",
+        `13` = "Differentiating",
         `14` = "Stem/proliferating",
         `15` = "Smooth muscle cell",
-        `16` = "Monocyte/Macrophage",
+        `16` = "Myeloid",
         `17` = "Granulocyte",
-        `18` = "Proximal airway cell",
+        `18` = "Upper airway cell",
         `19` = "Fibroblast",
-        `20` = "",
+        `20` = "Fibroblast",
         `21` = "B cell",
         `22` = "Endothelial cell",
-        `23` = "",
-        `24` = "",
+        `23` = "Distal airway cell",
+        `24` = "Fibroblast",
         `25` = "B cell",
-        `26` = "",
-        `27` = "",
+        `26` = "Myeloid",
+        `27` = "Distal airway cell",
         `28` = "Endothelial cell",
-        `29` = "")
+        `29` = "LowQ")
 
     lungs$manual_assignments <- Idents(lungs)
     Idents(lungs) <- lungs$seurat_clusters
@@ -403,15 +404,25 @@ r_dim_plot(lungs, "Manual Assignments", group.by = "manual_assignments", split.b
 ```{r}
 if(!file.exists("output/rdata/human_epithelial.qs")) {
     epi <- subset(lungs,
-        manual_assignments == c("Alveolar Epithelial", "Stem/Proliferating"))
+        manual_assignments == c("Distal airway cell", "Stem/proliferating"))
+    epi <- SplitObject(epi, split.by = "type")
+    min_cells <- lapply(epi, function(x) {length(Cells(x))}) %>%
+        unlist() %>%
+        min()
+    for (i in seq_along(epi)) {
+        epi[[i]] <- subset(epi[[i]], downsample = min_cells)
+    }
+    epi <- merge(epi[[1]], epi[[2:length(epi)]])
+
 
     # Reprocess the subsetted cells
     epi <- DietSeurat(epi, assays = "RNA") %>%
         FindVariableFeatures() %>%
         ScaleData() %>%
         RunPCA(npcs = 20, verbose = FALSE) %>%
-        harmony::RunHarmony(group.by.vars = c("src"), lambda = c(1)) %>%
-        RunUMAP(reduction = "harmony", dims = 1:20, seed.use = 555) %>%
+        harmony::RunHarmony(
+            group.by.vars = c("id", ""), lambda = c(1)) %>%
+        RunUMAP(reduction = "harmony", dims = 1:20) %>%
         FindNeighbors(reduction = "umap", dims = 1:2) %>%
         FindClusters(resolution = 0.2)
 
