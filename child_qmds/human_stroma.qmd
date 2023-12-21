@@ -335,7 +335,7 @@ if(!file.exists("output/rdata/integrated_lungs.qs")) {
 }
 
 p1 <- r_dim_plot(subset(lungs, type == "Healthy"),
-    group.by = "cell_type",
+    group.by = "ann_level_2",
     repel = TRUE,
     shuffle = TRUE)
 p2 <- r_dim_plot(subset(lungs, type == "Metastasis"),
@@ -355,36 +355,29 @@ if(!file.exists("misc/lungs_manual_assignment.qs")) {
         arrange(seurat_clusters, -n))
 
     lungs <- RenameIdents(lungs,
-        `0` = "Distal airway cell",
-        `1` = "Endothelial",
+        `0` = "Fibroblast",
+        `1` = "T/NK cell",
         `2` = "Myeloid",
-        `3` = "Fibroblast",
-        `4` = "T/NK Cell",
-        `5` = "Myeloid",
-        `6` = "Myeloid",
-        `7` = "T/NK Cell",
-        `8` = "T/NK Cell",
-        `9` = "Fibroblast",
-        `10` = "Distal airway cell",
-        `11` = "T/NK Cell",
-        `12` = "Distal airway cell",
-        `13` = "Differentiating",
-        `14` = "Stem/proliferating",
-        `15` = "Smooth muscle cell",
-        `16` = "Myeloid",
-        `17` = "Granulocyte",
-        `18` = "Upper airway cell",
+        `3` = "Alveolar epithelium",
+        `4` = "Myeloid",
+        `5` = "Endothelial",
+        `6` = "T/NK cell",
+        `7` = "Alveolar epithelium",
+        `8` = "Differentiating",
+        `9` = "Stem/Proliferating",
+        `10` = "Smooth Muscle",
+        `11` = "Airway epithelium",
+        `12` = "Granulocyte",
+        `13` = "Airway epithelium",
+        `14` = "B cell",
+        `15` = "Alveolar epithelium",
+        `16` = "Endothelium",
+        `17` = "Myeloid",
+        `18` = "Alveolar epithelium",
         `19` = "Fibroblast",
         `20` = "Fibroblast",
-        `21` = "B cell",
-        `22` = "Endothelial cell",
-        `23` = "Distal airway cell",
-        `24` = "Fibroblast",
-        `25` = "B cell",
-        `26` = "Myeloid",
-        `27` = "Distal airway cell",
-        `28` = "Endothelial cell",
-        `29` = "LowQ")
+        `21` = "Myeloid",
+        `22` = "Alveolar epithelium")
 
     lungs$manual_assignments <- Idents(lungs)
     Idents(lungs) <- lungs$seurat_clusters
@@ -394,7 +387,7 @@ if(!file.exists("misc/lungs_manual_assignment.qs")) {
 }
 
 p3 <- r_dim_plot(lungs, "Manual Assignments", group.by = "manual_assignments")
-p1 | p2 | p3
+p3 | p1 | p2
 
 r_dim_plot(lungs, "Manual Assignments", group.by = "manual_assignments", split.by = "type")
 ```
@@ -403,17 +396,8 @@ r_dim_plot(lungs, "Manual Assignments", group.by = "manual_assignments", split.b
 
 ```{r}
 if(!file.exists("output/rdata/human_epithelial.qs")) {
-    epi <- subset(lungs,
-        manual_assignments == c("Distal airway cell", "Stem/proliferating"))
-    epi <- SplitObject(epi, split.by = "type")
-    min_cells <- lapply(epi, function(x) {length(Cells(x))}) %>%
-        unlist() %>%
-        min()
-    for (i in seq_along(epi)) {
-        epi[[i]] <- subset(epi[[i]], downsample = min_cells)
-    }
-    epi <- merge(epi[[1]], epi[[2:length(epi)]])
-
+    epi <- subset(lungs, manual_assignments == c(
+        "Alveolar epithelium", "Stem/Proliferating", "Differentiating"))
 
     # Reprocess the subsetted cells
     epi <- DietSeurat(epi, assays = "RNA") %>%
@@ -421,10 +405,10 @@ if(!file.exists("output/rdata/human_epithelial.qs")) {
         ScaleData() %>%
         RunPCA(npcs = 20, verbose = FALSE) %>%
         harmony::RunHarmony(
-            group.by.vars = c("id", ""), lambda = c(1)) %>%
+            group.by.vars = c("id", "method"), lambda = c(1, 0.5)) %>%
         RunUMAP(reduction = "harmony", dims = 1:20) %>%
-        FindNeighbors(reduction = "umap", dims = 1:2) %>%
-        FindClusters(resolution = 0.2)
+        FindNeighbors(reduction = "harmony", dims = 1:20) %>%
+        FindClusters(resolution = 0.3)
 
     r_dim_plot(epi, group.by = "type")
     r_dim_plot(epi, group.by = "cell_type", repel = TRUE) +
@@ -574,22 +558,10 @@ DotPlot(epi2,
 ```{r}
 if(!file.exists(output/rdata/human_macs.qs)) {
     macs <- subset(lungs,
-        annotations %in% c(
-            "Myeloid Dendritic",
-            "Monocytes",
-            "Dendritic cells",
-            "Macrophage") |
-        cell_type %in% c(
-            "cDC1",
-            "cDC2",
-            "moDC",
-            "Inflammatory monocyte",
-            "Monocyte",
-            "Interstitial macrophage",
-            "Monocyte-derived macrophage",
-            "Alveolar macrophage",
-            "Inflamed",
-            "Immuno_Monocytes"))
+        manual_assignments %in% c(
+            "Myeloid",
+            "Stem/Proliferating",
+            "Differentiating"))
 
     macs <- DietSeurat(macs, assays = "RNA") %>%
         FindVariableFeatures() %>%
@@ -603,11 +575,13 @@ if(!file.exists(output/rdata/human_macs.qs)) {
         FindClusters(resolution = 0.4)
 
     r_dim_plot(macs, "Macrophage Clustering", split.by = "type")
-    r_dim_plot(macs, group.by = "id", split.by = "type", repel = TRUE)
     r_dim_plot(macs, group.by = "cell_type", repel = TRUE)
     r_dim_plot(macs, group.by = "annotations", repel = TRUE)
-    r_feature_plot(macs, "MARCO")
-    r_feature_plot(macs, "MRC1")
+    r_feature_plot(macs, "MARCO", split.by = "type")
+    r_feature_plot(macs, "CD68", split.by = "type")
+    r_feature_plot(macs, "CD4", split.by = "type")
+    r_feature_plot(macs, "TREM2", split.by = "type")
+
 
     # Clean up the macrophage data (non-myeloid cells)
     macs <- subset(macs, idents = c(
