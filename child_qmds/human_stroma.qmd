@@ -73,76 +73,79 @@ The download will contain a subset of the normal lung tissue samples, balanced f
 NOTE: If you haven't already downloaded and processed, you might need to run this step on a himem node.
 
 ```{r}
-if(!file.exists("hlca/nl_lung.qs")) {
-    if (!file.exists("/gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.qs")) {
-        options(
-            reticulate.conda_binary = "/gpfs0/export/apps/easybuild/software/Miniconda3/4.9.2/condabin/conda",
-            SCP_env_name = "r")
-        library(SCP)
-        library(reticulate)
-        sc <- import("scanpy")
+# if(!file.exists("hlca/nl_lung.qs")) {
+#     if (!file.exists("/gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.qs")) {
+#         options(
+#             reticulate.conda_binary = "/gpfs0/export/apps/easybuild/software/Miniconda3/4.9.2/condabin/conda",
+#             SCP_env_name = "r")
+#         library(SCP)
+#         library(reticulate)
+#         sc <- import("scanpy")
 
-        # Download the annotated full dataset from the Human Lung Cell Atlas project
-        # https://doi.org/10.1038/s41591-023-02327-2
-        system(
-            "curl https://datasets.cellxgene.cziscience.com/3ab47484-a3eb-4f6a-beea-670e1a8fc1e8.h5ad --output /gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.h5ad"
-        )
+#         # Download the annotated full dataset from the Human Lung Cell Atlas project
+#         # https://doi.org/10.1038/s41591-023-02327-2
+#         system(
+#             "curl https://datasets.cellxgene.cziscience.com/3ab47484-a3eb-4f6a-beea-670e1a8fc1e8.h5ad --output /gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.h5ad"
+#         )
 
-        # Need to invoke BPCells to handle the large object until we simplify
-        hlca.data <- BPCells::open_matrix_anndata_hdf5(
-            path = "/gpfs0/home2/gdrobertslab/rxr014/hlca.h5ad"
-        )
+#         # Need to invoke BPCells to handle the large object until we simplify
+#         hlca.data <- BPCells::open_matrix_anndata_hdf5(
+#             path = "/gpfs0/home2/gdrobertslab/rxr014/hlca.h5ad"
+#         )
 
-        # Write the matrix to a directory
-        BPCells::write_matrix_dir(mat = hlca.data, dir = "hlca/")
+#         # Write the matrix to a directory
+#         BPCells::write_matrix_dir(mat = hlca.data, dir = "hlca/")
 
-        # Now that we have the matrix on disk, we can load it
-        hlca.mat <- BPCells::open_matrix_dir(dir = "hlca/")
-        hlca.mat <- Azimuth:::ConvertEnsembleToSymbol(mat = hlca.mat, species = "human")
-        hlca.meta <- Azimuth::LoadH5ADobs("/gpfs0/home2/gdrobertslab/rxr014/hlca.h5ad")
+#         # Now that we have the matrix on disk, we can load it
+#         hlca.mat <- BPCells::open_matrix_dir(dir = "hlca/")
+#         hlca.mat <- Azimuth:::ConvertEnsembleToSymbol(mat = hlca.mat, species = "human")
+#         hlca.meta <- Azimuth::LoadH5ADobs("/gpfs0/home2/gdrobertslab/rxr014/hlca.h5ad")
 
-        # Create Seurat object (just metadata and raw counts)
-        hlca <- SeuratObject::CreateSeuratObject(counts = hlca.mat, meta.data = hlca.meta)
+#         # Create Seurat object (just metadata and raw counts)
+#         hlca <- SeuratObject::CreateSeuratObject(counts = hlca.mat, meta.data = hlca.meta)
 
-        # Write the simplified Seurat object
-        qs::qsave(hlca, "/gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.qs")
+#         # Write the simplified Seurat object
+#         qs::qsave(hlca, "/gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.qs")
 
-    } else {
-        hlca <- qs::qread("/gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.qs")
-    }
+#     } else {
+#         hlca <- qs::qread("/gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.qs")
+#     }
 
-    cases <- as.data.frame(hlca@meta.data) %>%
-        select(
-            sample,
-            age_or_mean_of_age_range,
-            smoking_status,
-            subject_type,
-            tissue,
-            lung_condition,
-            assay,
-            fresh_or_frozen
-            ) %>%
-        filter(
-            !tissue %in% c("respiratory airway", "nose"),
-            lung_condition == "Healthy",
-            assay == "10x 3' v3",
-            age_or_mean_of_age_range > 1,
-            smoking_status != 0
-            ) %>%
-        unique()
+#     cases <- as.data.frame(hlca@meta.data) %>%
+#         select(
+#             sample,
+#             age_or_mean_of_age_range,
+#             smoking_status,
+#             subject_type,
+#             tissue,
+#             lung_condition,
+#             assay,
+#             fresh_or_frozen
+#             ) %>%
+#         filter(
+#             !tissue %in% c("respiratory airway", "nose"),
+#             lung_condition == "Healthy",
+#             assay == "10x 3' v3",
+#             age_or_mean_of_age_range > 1,
+#             smoking_status != 0
+#             ) %>%
+#         unique()
 
-    table(cases$fresh_or_frozen)
+#     table(cases$fresh_or_frozen)
 
-    nl_lung <- subset(hlca, subset = sample %in% cases$sample)
-    nl_lung$type <- "Healthy"
+#     nl_lung <- subset(hlca, subset = sample %in% cases$sample)
+#     nl_lung$type <- "Healthy"
 
-    nl_lung <- SplitObject(nl_lung, split.by = "sample")
+#     nl_lung <- SplitObject(nl_lung, split.by = "sample")
 
-    qs::qsave(nl_lung, "hlca/nl_lung.qs")
+#     qs::qsave(nl_lung, "hlca/nl_lung.qs")
 
-} else {
-    nl_lung <- qs::qread("hlca/nl_lung.qs")
-}
+# } else {
+#     nl_lung <- qs::qread("hlca/nl_lung.qs")
+# }
+
+nl_lung <- qs::qread("LungRefs/hlca_healthy_sample.qs")
+nl_lung$type <- "Healthy"
 ```
 
 # Load the osteosarcoma lung metastases
@@ -292,19 +295,20 @@ Need to rewrite to make integration conditional on having been previously run***
 ```{r}
     # Check to see if integrated dataset has already been processed
 if(!file.exists("output/rdata/integrated_lungs.qs")) {
-    # Merge the normal and metastatic lung data into a single object
-    # Downsample the normal lung data
-    for(i in seq_along(nl_lung)) {
-        nl_lung[[i]] <- subset(nl_lung[[i]], downsample = 1000)
-        nl_lung[[i]][["RNA"]]$counts <- as(nl_lung[[i]][["RNA"]]$counts,
-            Class = "dgCMatrix")
-        nl_lung[[i]] <- NormalizeData(nl_lung[[i]])}
+    # # Merge the normal and metastatic lung data into a single object
+    # # Downsample the normal lung data
+    # for(i in seq_along(nl_lung)) {
+    #     nl_lung[[i]] <- subset(nl_lung[[i]], downsample = 1000)
+    #     nl_lung[[i]][["RNA"]]$counts <- as(nl_lung[[i]][["RNA"]]$counts,
+    #         Class = "dgCMatrix")
+    #     nl_lung[[i]] <- NormalizeData(nl_lung[[i]])}
 
-    nl_lung <- merge(nl_lung[[1]], nl_lung[2:length(nl_lung)],
-        add.cell.ids = names(nl_lung)) %>%
-        JoinLayers()
+    # nl_lung <- merge(nl_lung[[1]], nl_lung[2:length(nl_lung)],
+    #     add.cell.ids = names(nl_lung)) %>%
+    #     JoinLayers()
     nl_lung$id <- nl_lung$sample
-    nl_lung$method <- nl_lung$suspension_type
+    nl_lung$method <- nl_lung$fresh_or_frozen
+    nl_lung <- subset(nl_lung, cells = sample(Cells(nl_lung), size = 19000))
 
     met_stroma <- merge(met_stroma[[1]], met_stroma[2:length(met_stroma)],
         add.cell.ids = names(met_stroma)) %>%
@@ -339,11 +343,13 @@ p1 <- r_dim_plot(subset(lungs, type == "Healthy"),
     repel = TRUE,
     shuffle = TRUE)
 p2 <- r_dim_plot(subset(lungs, type == "Metastasis"),
-    group.by = "annotations",
+    group.by = "seurat_clusters",
     repel = TRUE,
     shuffle = TRUE)
 p3 <- r_dim_plot(lungs, "Integrated Stroma")
 p3 | p1 | p2
+
+r_dim_plot(lungs, split.by = "type", group.by = "ann_level_2", repel = TRUE)
 
 # Perform a semi-automated, manually verified cell type assignment
 if(!file.exists("misc/lungs_manual_assignment.qs")) {

@@ -1,0 +1,238 @@
+# Set up automated cell type annotation
+
+```{r}
+lung_ref <- qs::qread("LungRefs/normal_lung.qs")
+lung_ref$free_annotation <-
+    stringr::str_replace_all(lung_ref$free_annotation,
+        c("/" = "_", "\\+" = "_plus"))
+lung_ref$free_annotation <-
+    stringr::str_replace_all(lung_ref$free_annotation,
+        c("Alveolar Epithelial Type 1" = "Alveolar Epithelial",  #nolint
+            "Alveolar Epithelial Type 2" = "Alveolar Epithelial",  #nolint
+            "Basophil_Mast 1" = "Basophil_Mast",
+            "Basophil_Mast 2" = "Basophil_Mast",
+            "Bronchial Vessel 1" = "Bronchial Vessel",
+            "Bronchial Vessel 2" = "Bronchial Vessel",
+            "IGSF21_plus Dendritic" = "Dendritic cells",
+            "Myeloid Dendritic Type 1" = "Myeloid Dendritic",   #nolint
+            "Myeloid Dendritic Type 2" = "Myeloid Dendritic",   #nolint
+            "Natural Killer" = "NK cells",
+            "Natural Killer T" = "NKT",
+            "NK cells T" = "NKT",
+            "CD4_plus Memory/Effector T" = "CD4+ T cells",
+            "CD4_plus Naive T" = "CD4+ T cells",
+            "CD8_plus Memory_Effector T" = "CD8+ T cells",
+            "CD8_plus Naive T" = "CD8+ T cells",
+            "Proliferating NK_T" = "NKT",
+            "TREM2_plus Dendritic" = "Dendritic cells",
+            "Proliferating Macrophage" = "Macrophage",
+            "Nonclassical Monocyte" = "Monocytes",
+            "Classical Monocyte" = "Monocytes"))
+
+annotate <- function(sobject,
+    aggr_ref = TRUE,
+    label_type = "label.main",
+    ...) {
+        hpca <- celldex::HumanPrimaryCellAtlasData()
+        hpca$label.main <-
+            stringr::str_replace_all(hpca$label.main,
+                c("T_cells" = "T cells",
+                "B_cell" = "B cells",
+                "NK_cell" = "NK cells",
+                "Monocyte" = "Monocytes",
+                "DC" = "Dendritic cells"))
+        huim <- celldex::MonacoImmuneData()
+        ref3 <- GetAssayData(lung_ref)
+        ref <- list(hpca, huim, ref3)
+        labels <- list(
+            hpca[[label_type]],
+            huim[[label_type]],
+            lung_ref$free_annotation)
+        annotation <-
+            SingleR::SingleR(test = Seurat::as.SingleCellExperiment(sobject),
+                ref = ref,
+                labels = labels,
+                aggr.ref = aggr_ref,
+                BPPARAM = BiocParallel::MulticoreParam(
+                    parallelly::availableCores()),
+                ...)
+        sobject$annotations <- annotation$labels
+        sobject$cell_scores <-
+            apply(X = annotation$scores,
+                MARGIN = 1,
+                function(x) max(x, na.rm = TRUE))
+        return(sobject)
+    }
+```
+
+# Create SingleR References of the complete HLCA and of the core (healthy lung) HLCA
+The annotated full HLCA dataset was downloaded from the Human Lung Cell Atlas project.
+https://doi.org/10.1038/s41591-023-02327-2
+
+NOTE: If you haven't already downloaded and processed, you might need to run this step on a himem node.
+
+## Setup the environment
+
+```{r setup}
+library(tidyverse)
+library(Seurat)
+library(SingleR)
+library(rrrSingleCellUtils)
+library(BPCells)
+
+# Enable parallel processing for Seurat
+library(future)
+plan("multicore", workers = 9)
+```
+
+## Load and pre-process the hlca complete dataset
+
+```{r load-hlca}
+if (!file.exists("/gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.qs")) {
+    # Download the annotated full dataset from the Human Lung Cell Atlas project
+    # https://doi.org/10.1038/s41591-023-02327-2
+    system(
+        "curl https://datasets.cellxgene.cziscience.com/3ab47484-a3eb-4f6a-beea-670e1a8fc1e8.h5ad --output /gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.h5ad"
+    )
+
+    # Need to invoke BPCells to handle the large object until we simplify
+    hlca.data <- BPCells::open_matrix_anndata_hdf5(
+        path = "/gpfs0/home2/gdrobertslab/rxr014/hlca.h5ad"
+    )
+
+    # Write the matrix to a directory
+    BPCells::write_matrix_dir(mat = hlca.data, dir = "hlca/")
+
+    # Now that we have the matrix on disk, we can load it
+    hlca.mat <- BPCells::open_matrix_dir(dir = "hlca/")
+    hlca.mat <- Azimuth:::ConvertEnsembleToSymbol(mat = hlca.mat, species = "human")
+    # hlca.meta <- Azimuth::LoadH5ADobs("/gpfs0/home2/gdrobertslab/rxr014/hlca.h5ad")
+    hlca.meta <- colData(qs::qread("LungRefs/hlca-complete.qs")) %>%
+        as.data.frame()
+
+    # Create Seurat object (just metadata and raw counts)
+    hlca <- SeuratObject::CreateSeuratObject(counts = hlca.mat, meta.data = hlca.meta)
+
+    # Write the simplified Seurat object
+    qs::qsave(hlca, "/gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.qs")
+
+} else {
+    hlca <- qs::qread("/gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.qs")
+}
+```
+
+## Create a healthy lung balanced control sample
+
+```{r create-healthy}
+
+cells <- hlca@meta.data %>%
+    rownames_to_column(var = "cell_ids") %>%
+    dplyr::select(cell_ids, fresh_or_frozen, lung_condition, smoking_status) %>%
+    filter(smoking_status %in% c("former", "never")) %>%
+    filter(lung_condition == "Healthy")
+
+cells <- rbind(
+    cells %>%
+        filter(fresh_or_frozen == "frozen"),
+    cells %>%
+        filter(fresh_or_frozen == "fresh") %>%
+        slice_sample(n = 20000))
+
+healthy_lung <- subset(hlca, cells = cells$cell_ids) %>%
+    Seurat::NormalizeData()
+
+qs::qsave(healthy_lung, "LungRefs/hlca_healthy_sample.qs")
+```
+
+
+
+
+
+
+
+
+
+## Create high- and low-resolution pre-aggregated references
+
+```{r whole-reference}
+if (!file.exists("hlca/hlca_complete.qs")) {
+    # Isolate the iterative matrix for analysis with BPCells
+    mat <- hlca[['RNA']]$counts
+
+    # Calculate row stats and identify variable genes
+    stats <- matrix_stats(mat, row_stats = "variance")
+    var_genes <- order(stats$row_stats["variance", ], decreasing=TRUE) %>%
+        head(8000) %>%
+        sort()
+
+    # Normalize counts by cell
+    nmat <- multiply_cols(mat[var_genes], 1/Matrix::colSums(mat))
+    nmat <- write_matrix_dir(nmat, tempfile("nmat"), compress = FALSE)
+
+    # Perform a Z-score normalization of gene expression
+    smat <- (nmat - stats$row_stats["mean", var_genes] /
+        stats$row_stats["variance", var_genes])
+
+    # Perform a PCA on the Z-score normed gene expression and create UMAP
+    svd <- irlba::irlba(smat, nv=50)
+    pca <- multiply_cols(svd$v, svd$d)
+    rownames(svd$v) <- Cells(hlca)
+    colnames(svd$v) <- paste0("PC_", 1:50)
+    rownames(svd$u) <- rownames(mat[var_genes])
+    colnames(svd$u) <- paste0("PC_", 1:50)
+    qs::qsave(svd, "output/rdata/svd.qs")
+
+    cat(sprintf("PCA dimensions: %s\n", toString(dim(pca))))
+    pca[1:4,1:3]
+
+    umap <- uwot::umap(pca)
+    colnames(umap) <- c("UMAP_1", "UMAP_2")
+    qs::qsave(umap, "output/rdata/umap.qs")
+
+    # Store data back to Seurat object
+    hlca[['RNA']]$data <- nmat
+    hlca[['RNA']]$scale.data <- smat
+
+    qs::qsave(hlca, "output/rdata/hlca-intermediate.qs")
+
+    hlca[['pca']] <- CreateDimReducObject(
+        embeddings = svd$v,
+        loadings = svd$u,
+        assay = "RNA",
+        key = "PC_")
+
+    var_genes <- rownames(mat)[var_genes]
+    VariableFeatures(hlca, assay = "RNA") <- var_genes
+
+    hlca[['umap']] <- CreateDimReducObject(
+        embeddings = umap,
+        assay = "RNA",
+        key = "UMAP_")
+
+    qs::qsave(hlca, "hlca/hlca_complete.qs")
+
+} else {
+    hlca <- qs::qread("hlca/hlca_complete.qs")
+}
+
+r_dim_plot(hlca, group.by = "ann_level_2")
+r_dim_plot(hlca, group.by = "cell_type", repel = TRUE, shuffle = TRUE)
+```
+
+## Try downsampling and using the Seurat workflow
+
+```{r aggregate}
+# Downsample to 1M cells
+hlca2 <- subset(hlca, downsample = 200000)
+
+hlca2 <- NormalizeData(hlca2)
+hlca2 <- ScaleData(hlca2)
+qs::qsave(hlca2, "output/rdata/hlca-intermediate2b.qs")
+
+hlca2 <- FindVariableFeatures(hlca2, nfeatures = 5000)
+hlca2 <- RunPCA(hlca2, npcs = 30)
+qs::qsave(hlca2, "output/rdata/hlca-intermediate3.qs")
+
+hlca2 <- RunUMAP(hlca2, reduction = "pca", dims = 1:30)
+qs::qsave(hlca2, "output/rdata/hlca-intermediate4.qs")
+```

@@ -1,0 +1,82 @@
+# Create SingleR References of the complete HLCA and of the core (healthy lung) HLCA
+The annotated full HLCA dataset was downloaded from the Human Lung Cell Atlas project.
+https://doi.org/10.1038/s41591-023-02327-2
+
+NOTE: If you haven't already downloaded and processed, you might need to run this step on a himem node.
+
+## Setup the environment
+
+```{r setup}
+library(tidyverse)
+library(hdf5r)
+library(zellkonverter)
+library(scater)
+library(SingleR)
+# library(rrrSingleCellUtils)
+
+# Enable parallel processing for Seurat
+bp.params <- BiocParallel::MulticoreParam(workers = 30)
+```
+
+## Load and pre-process the hlca complete dataset
+
+```{r load-hlca}
+if (!file.exists("/gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.h5ad")) {
+    # Download the annotated full dataset from the Human Lung Cell Atlas project
+    # https://doi.org/10.1038/s41591-023-02327-2
+    system(
+        "curl https://datasets.cellxgene.cziscience.com/3ab47484-a3eb-4f6a-beea-670e1a8fc1e8.h5ad --output /gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.h5ad"
+    )
+}
+
+if(!file.exists("LungRefs/hlca-complete.qs")) {
+    # Need to invoke BPCells to handle the large object until we simplify
+    system('export LD_LIBRARY_PATH="./.conda/pkgs/libstdcxx-ng-12.2.0-h46
+    fd767_19/lib/libstdc++.so.6.0.30:$LD_LIBRARY_PATH"')
+    hlca <- readH5AD("/gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.h5ad")
+
+    # Convert Ensembl IDs to gene symbols
+    conv_table <- AnnotationDbi::select(org.Hs.eg.db::org.Hs.eg.db,
+        keys = rownames(hlca),
+        columns = "SYMBOL",
+        keytype = "ENSEMBL")
+    conv_table <- conv_table[!is.na(conv_table$SYMBOL), ]
+    conv_table <- conv_table[!duplicated(conv_table$SYMBOL), ]
+    hlca <- hlca[conv_table$ENSEMBL, ]
+    rownames(hlca) <- conv_table$SYMBOL
+
+    qs::qsave(hlca, "LungRefs/hlca-complete.qs")
+
+} else {
+    hlca <- qs::qread("LungRefs/hlca-complete.qs")
+}
+
+    # Create an aggregated reference simplified with pseudobulk
+    names(assays(hlca)) <- c("logcounts_no_soup", "logcounts")
+    hlca_whole_ref <- aggregateReference(hlca,
+        c(hlca$cell_type, hlca$ann_level_2),
+        ncenters = 20,
+        BPPARAM = bp.params,
+        BSPARAM = BiocSingular::IrlbaParam())
+
+```
+
+# Create a healthy lung object to use in comparison to lung mets
+
+```{r healthy-lung}
+cells <- colData(hlca) %>%
+    as.data.frame() %>%
+    rownames_to_column(var = "cell_ids") %>%
+    select(cell_ids, fresh_or_frozen, lung_condition, smoking_status) %>%
+    filter(smoking_status %in% c("former", "never")) %>%
+    filter(lung_condition == "Healthy") %>%
+    group_by(fresh_or_frozen) %>%
+    slice_sample(n = 20000) %>%
+    pull(cell_ids)
+
+healthy_lung <- hlca[, cells]
+
+
+
+
+```
