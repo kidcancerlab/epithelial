@@ -748,7 +748,7 @@ mac_features <- c(
 
 DotPlot(macs2,
     features = mac_features,
-    group.by = "seurat_clusters",
+    group.by = "macs_assignment",
     cols = "RdBu",
     col.max = 1.5,
     col.min = -1) +
