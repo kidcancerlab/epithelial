@@ -670,6 +670,7 @@ if(!file.exists(output/rdata/human_macs.qs)) {
 
     # One last cleanup
     macs <- subset(macs, idents = c(
+        "10", # Alveolar Macs
         "13", # Plasmacytoid DCs
         "8"), # Plasmacytoid DCs
         invert = TRUE)
@@ -681,7 +682,7 @@ if(!file.exists(output/rdata/human_macs.qs)) {
     # https://doi.org/10.1126%2Fscience.aah4573
     macs2 <- RenameIdents(macs,
         "0" = "TAMs",
-        "1" = "Scar-Macs",
+        "1" = "Lipid-associated",
         "2" = "Scar-Macs",
         "3" = "cMonocyte",
         "4" = "DC2",
@@ -689,7 +690,6 @@ if(!file.exists(output/rdata/human_macs.qs)) {
         "6" = "Cycling",
         "7" = "ncMonocyte",
         "9" = "ncMonocyte",
-        "10" = "Lipid-associated",
         "11" = "TIMs",
         "12" = "IFN-TAMs",
         "14" = "TIMs",
@@ -709,8 +709,8 @@ if(!file.exists(output/rdata/human_macs.qs)) {
         "IFN-TAMs",
         "Inflammatory",
         "Interstitial",
-        "Cycling",
         "TIMs",
+        "Cycling",
         "ncMonocyte",
         "cMonocyte",
         "Pre-DC",
@@ -732,14 +732,14 @@ if(!file.exists(output/rdata/human_macs.qs)) {
 r_dim_plot(macs2, split.by = "type", repel = TRUE)
 
 mac_features <- c(
-    "TREM2", "CD9", "SPP1", "GPNMB",  # Scar-Macs
-    "ACP5", "APOC1", "LGALS3", # Lipid-associated
+    "TREM2", "CD9", "SPP1", "GPNMB", # Scar-Macs
+    "ACP5", "LGALS3", "FABP5", # Lipid-associated
     "MERTK", "MS4A7", # TAMs
     "IFIT2", "IFIT3", # IFN-TAMS
     "IL1B", "CXCL8", # Inflammatory
     "LYVE1", "SELENOP", # Interstitial
+    "SPARC", "CLEC11A", # TIMs
     "MKI67", "TOP2A", # Cycling
-    "CLEC11A", "SPARC", # TIMs
     "IFITM1", "IFITM2", # ncMonocyte
     "S100A8", "S100A9", # cMonocyte
     "CLEC9A", "IRF8", # DC1
@@ -753,7 +753,8 @@ DotPlot(macs2,
     col.max = 1.5,
     col.min = -1) +
     scale_y_discrete(limits = rev) +
-    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+    coord_fixed()
 
 r_dim_plot(macs2,
     split.by = "type",
