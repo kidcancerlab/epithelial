@@ -1,0 +1,153 @@
+# Read in raw data
+
+ROB491D-1     SP0001      F420 lung met
+
+```{r loadData}
+#| cache.vars: spatial_data
+spatial_data <-
+    Load10X_Spatial("/home/gdrobertslab/lab/Counts_2/SP0001/outs/",
+                    filename = "filtered_feature_bc_matrix.h5") %>%
+    subset(nCount_Spatial > 0)
+
+spatial_data <- AddMetaData(spatial_data, GetTissueCoordinates(spatial_data))
+
+GetTissueCoordinates(spatial_data) %>%
+    ggplot(aes(x = x, y = y)) +
+    geom_point()
+
+# Filter out spots outside of the tissue
+subset(spatial_data, x > 0 & y > 0) %>%
+    SpatialPlot(features = "nCount_Spatial", pt.size.factor = 1) +
+    theme_bw()
+
+spatial_data <- subset(spatial_data, x > 0 & y > 0)
+spatial_data$sample_id <- "SP0001"
+```
+
+## Process the data
+```{r processData}
+spatial_data <-
+    spatial_data %>%
+    SCTransform(assay = "Spatial") %>%
+    RunPCA(assay = "SCT") %>%
+    FindNeighbors(dims = 1:30) %>%
+    FindClusters(resolution = 1.5)  %>%
+    RunUMAP(dims = 1:30)
+```
+
+## Add in module for tumor marker genes
+```{r addTumorMarkers}
+tumor_features <- c("Runx2", "Fn1", "Mki67", "Col1a1")
+spatial_data <-
+    AddModuleScore(spatial_data, list(tumor_features), name = "tumor_markers")
+```
+
+## Make some plots of the data
+```{r plotStuff}
+plot_name <-
+    SpatialDimPlot(
+        spatial_data,
+        pt.size = 2,
+        label = TRUE
+    )
+ggsave(
+    "output/figures/spatial/spatial_dimplot_plot.png",
+    plot_name,
+    width = 15,
+    height = 15
+)
+
+plot_name <-
+    DimPlot(
+        spatial_data,
+        label = TRUE,
+        repel = TRUE
+    )
+ggsave(
+    "output/figures/spatial/spatial_umap_plot_by_cluster.png",
+    plot_name,
+    width = 15,
+    height = 10
+)
+
+plot_name <-
+    SpatialPlot(
+        spatial_data,
+        features = tumor_features,
+        pt.size.factor = 2
+    )
+ggsave(
+    "output/figures/spatial/spatial_plot_by_feature.png",
+    plot_name,
+    width = 15,
+    height = 15
+)
+
+vln_plot <-
+    VlnPlot(
+        spatial_data,
+        features = "tumor_markers1",
+        split.by = "seurat_clusters",
+        cols = sample(rainbow(50))
+    )
+ggsave(
+    "output/figures/spatial/vln_plot.png",
+    vln_plot,
+    width = 10,
+    height = 5
+)
+```
+
+## Split out tumor spots
+```{r splitTumor}
+col_cutoff <- 1
+
+tumor_clusters <-
+    spatial_data@meta.data %>%
+    select(tumor_markers1, seurat_clusters) %>%
+    rownames_to_column("spot") %>%
+    group_by(seurat_clusters) %>%
+    summarize(tumor_median = median(tumor_markers1)) %>%
+    arrange(desc(tumor_median)) %>% # Put them in order so we can use this later
+    filter(tumor_median > col_cutoff) %>%
+    pull(seurat_clusters)
+
+spatial_data$tumor <- spatial_data$seurat_clusters %in% tumor_clusters
+
+tumor_only <- subset(spatial_data, subset = tumor == TRUE)
+
+plot_1 <-
+    SpatialPlot(
+        spatial_data,
+        group.by = "tumor",
+        pt.size.factor = 1.5,
+        label = TRUE
+    )
+plot_2 <-
+    SpatialPlot(
+        tumor_only,
+        group.by = "seurat_clusters",
+        pt.size.factor = 1.5,
+        label = TRUE
+    )
+plot_3 <-
+    VlnPlot(
+        spatial_data,
+        features = "tumor_markers1",
+        group.by = "seurat_clusters"
+    )
+
+merged_plot <- patchwork::wrap_plots(plot_1, plot_2, plot_3, ncol = 2)
+
+ggsave(
+    "output/figures/spatial/tumor_clusters_vln.png",
+    merged_plot,
+    width = 10,
+    height = 10
+)
+```
+
+## Save off the data
+```{r eval=FALSE}
+qs::qsave(spatial_data, file = "output/rdata/spatial_data.qs")
+```
