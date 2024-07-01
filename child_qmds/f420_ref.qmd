@@ -1,0 +1,56 @@
+```{r load_f420}
+data_path <- "/home/gdrobertslab/lab/Counts_2/"
+end_path <- "/filtered_feature_bc_matrix"
+
+obj_name <- "S0261"
+
+sobj <-
+    tenx_load_qc(
+        paste0(
+            data_path,
+            obj_name,
+            end_path
+        ),
+        min_cells = 3,
+        min_features = 200,
+        violin_plot = FALSE
+    )
+
+# Add sample name to dataset
+sobj$sample <- obj_name
+
+sobj <- sobj %>%
+    subset(nCount_RNA <= 100000 & percent.mt <= 40) %>%
+    process_seurat()
+```
+
+```{r label_barcodes}
+# Add in barcode info
+lt_barcodes <-
+    gen_cellecta_bc_data(
+        file = paste0(
+            data_path,
+            obj_name,
+            "/possorted_genome_bam.bam"
+        ),
+        verbose = TRUE,
+        samtools_module = "SAMtools"
+    )
+
+sobj <- process_ltbc(sobj, cid_lt = lt_barcodes)
+
+sobj$has_bc <- !is.na(sobj$lt)
+tumor_cell_cluster <-
+    table(sobj$has_bc, sobj$seurat_clusters) %>%
+    as.data.frame() %>%
+    filter(Var1 == TRUE) %>%
+    arrange(desc(Freq)) %>%
+    pull(Var2) %>%
+    head(n = 1)
+
+sobj <- subset(sobj, seurat_clusters == tumor_cell_cluster)
+
+sobj$cell_type <- "Tumor"
+
+qs::qsave(sobj, "output/rdata/f420_reference.qs")
+```
