@@ -113,7 +113,7 @@ gl <- c("Sftpa1", "Sftpc", "Lgi3",
 "Areg", "Krt8", "Cdkn1a",
 "Pdpn", "Hopx", "Cav1")
 
-DotPlot(murine_aec, features = gl, cols = c("lightgoldenrod", "darkred")) +
+DotPlot(murine_aec, features = gl, cols = "RdBu") +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
 # Cluster identification based on published data sets
@@ -135,7 +135,7 @@ murine_aec$aec_type <- factor(murine_aec$aec_type,
 
 DotPlot(murine_aec,
     features = gl,
-    cols = c("lightgoldenrod", "darkred"),
+    cols = "RdBu",
     group.by = "aec_type",
     dot.scale = 8) +
     theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))

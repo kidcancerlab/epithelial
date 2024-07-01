@@ -3,7 +3,7 @@
 ```{r}
 lung_ref <- qs::qread("LungRefs/normal_lung.qs")
 lung_ref$free_annotation <-
-    str_replace_all(lung_ref$free_annotation,
+    stringr::str_replace_all(lung_ref$free_annotation,
         c("/" = "_", "\\+" = "_plus"))
 lung_ref$free_annotation <-
     stringr::str_replace_all(lung_ref$free_annotation,
@@ -30,7 +30,7 @@ lung_ref$free_annotation <-
             "Classical Monocyte" = "Monocytes"))
 
 annotate <- function(sobject,
-    aggr_ref = FALSE,
+    aggr_ref = TRUE,
     label_type = "label.main",
     ...) {
         hpca <- celldex::HumanPrimaryCellAtlasData()
@@ -53,6 +53,8 @@ annotate <- function(sobject,
                 ref = ref,
                 labels = labels,
                 aggr.ref = aggr_ref,
+                BPPARAM = BiocParallel::MulticoreParam(
+                    parallelly::availableCores()),
                 ...)
         sobject$annotations <- annotation$labels
         sobject$cell_scores <-
@@ -66,100 +68,84 @@ annotate <- function(sobject,
 # Load the normal human lung data
 GSE227136 contains a very large control normal lung dataset. We will extract normal lung scRNA-seq from this.
 
-The download will contain all of the lung sets (diseased and normal). We will keep only the healthy lung samples processed at TGen--these were not sorted like those processed at Vanderbilt, so match our datasets better. We will also keep only the never-smokers. This reduces our sample to the following list of sample names: THD0002, THD0006, THD0010, THD0014, VUHD69, VUHD076.
+The download will contain a subset of the normal lung tissue samples, balanced for whole cell and nucleus based RNAseq, from the Human Lung Cell Atlas project.
 
 NOTE: If you haven't already downloaded and processed, you might need to run this step on a himem node.
 
 ```{r}
-# Check to see if we've already downloaded and processed whole cell normal lung
-if(!file.exists("output/rdata/normal_lung_fresh.qs")) {
-    # Download the files
-    if(!dir.exists("GSE227136")) {
-        dir.create("GSE227136")
-    }
+# if(!file.exists("hlca/nl_lung.qs")) {
+#     if (!file.exists("/gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.qs")) {
+#         options(
+#             reticulate.conda_binary = "/gpfs0/export/apps/easybuild/software/Miniconda3/4.9.2/condabin/conda",
+#             SCP_env_name = "r")
+#         library(SCP)
+#         library(reticulate)
+#         sc <- import("scanpy")
 
-    if(!file.exists("GSE227136/GSE227136.rds")) {
-        options(timeout = 1800)
-        download.file("https://ftp.ncbi.nlm.nih.gov/geo/series/GSE227nnn/GSE227136/suppl/GSE227136%5FILD%5Fall%5Fcelltypes%5FSeurat.rds.gz",
-            destfile = "GSE227136/GSE227136.rds.gz")
-        R.utils::gunzip("GSE227136/GSE227136.rds.gz")
-    }
+#         # Download the annotated full dataset from the Human Lung Cell Atlas project
+#         # https://doi.org/10.1038/s41591-023-02327-2
+#         system(
+#             "curl https://datasets.cellxgene.cziscience.com/3ab47484-a3eb-4f6a-beea-670e1a8fc1e8.h5ad --output /gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.h5ad"
+#         )
 
-    # Make a list of the normal lung sample names
-    normal_names <- c("THD0002", "THD0006", "THD0010", "THD0014", "VUHD69", "VUHD076")
+#         # Need to invoke BPCells to handle the large object until we simplify
+#         hlca.data <- BPCells::open_matrix_anndata_hdf5(
+#             path = "/gpfs0/home2/gdrobertslab/rxr014/hlca.h5ad"
+#         )
 
-    # Isolate the normal lung whole cell datasets
-    normal_lung_cell <- readRDS("GSE227136/GSE227136.rds") %>%
-        subset(Sample_Name %in% normal_names)
-    DefaultAssay(normal_lung_cell) <- "RNA"
-    normal_lung_cell@meta.data <- normal_lung_cell@meta.data %>%
-        rename(id = Short_Sample_Name,
-            sex = Gender,
-            age = Age,
-            smoking = Tobacco,
-            cell_type = manual_annotation_1) %>%
-            mutate(src = "GSE227136",
-                method = "cell",
-                type = "Healthy") %>%
-            select(nCount_RNA, nFeature_RNA, percent.mt, id, sex, age, smoking, cell_type, src,
-                method, type, )
-    normal_lung_cell <- DietSeurat(normal_lung_cell, assays = "RNA") %>%
-        NormalizeData() %>%
-        SplitObject(split.by = "id")
+#         # Write the matrix to a directory
+#         BPCells::write_matrix_dir(mat = hlca.data, dir = "hlca/")
 
-    qs::qsave(normal_lung_cell, "output/rdata/normal_lung_fresh.qs")
+#         # Now that we have the matrix on disk, we can load it
+#         hlca.mat <- BPCells::open_matrix_dir(dir = "hlca/")
+#         hlca.mat <- Azimuth:::ConvertEnsembleToSymbol(mat = hlca.mat, species = "human")
+#         hlca.meta <- Azimuth::LoadH5ADobs("/gpfs0/home2/gdrobertslab/rxr014/hlca.h5ad")
 
-} else {
+#         # Create Seurat object (just metadata and raw counts)
+#         hlca <- SeuratObject::CreateSeuratObject(counts = hlca.mat, meta.data = hlca.meta)
 
-    normal_lung_cell <- qs::qread("output/rdata/normal_lung_fresh.qs")
+#         # Write the simplified Seurat object
+#         qs::qsave(hlca, "/gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.qs")
 
-}
+#     } else {
+#         hlca <- qs::qread("/gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.qs")
+#     }
 
-# Check to see if we've already downloaded and processed frozen normal lung
-# from https://doi.org/10.15252/embj.20105114
-if(!file.exists("output/rdata/normal_lung_nuclei.qs")) {
-    # Download the files
-    if(!dir.exists("Lukassen")) {
-        dir.create("Lukassen")
-    }
+#     cases <- as.data.frame(hlca@meta.data) %>%
+#         select(
+#             sample,
+#             age_or_mean_of_age_range,
+#             smoking_status,
+#             subject_type,
+#             tissue,
+#             lung_condition,
+#             assay,
+#             fresh_or_frozen
+#             ) %>%
+#         filter(
+#             !tissue %in% c("respiratory airway", "nose"),
+#             lung_condition == "Healthy",
+#             assay == "10x 3' v3",
+#             age_or_mean_of_age_range > 1,
+#             smoking_status != 0
+#             ) %>%
+#         unique()
 
-    if(!file.exists("Lukassen/counts.csv")) {
-        options(timeout = 1800)
-        download.file("https://figshare.com/ndownloader/files/21999237",
-            destfile = "Lukassen/counts.csv")
-        download.file("https://figshare.com/ndownloader/files/21999240",
-            destfile = "Lukassen/metadata.csv")
-    }
+#     table(cases$fresh_or_frozen)
 
-    # Isolate the normal lung datasets (frozen)
-    c <- data.table::fread("Lukassen/counts.csv") %>%
-        data.frame(row.names = 1)
-    m <- read.csv("Lukassen/metadata.csv") %>%
-        rename(id = ID,
-            sex = Sex,
-            age = Age,
-            smoking = Smoking,
-            cell_type = Cell.type,
-            percent.mt = MT.ratio,
-            nFeature_RNA = Gene.count,
-            nCount_RNA = UMI.count) %>%
-            mutate(src = "Lukassen",
-                method = "nucleus",
-                type = "Healthy")
-    colnames(c) <- rownames(m)
-    normal_lung_nuclei <- CreateSeuratObject(counts = c, assay = "RNA", meta.data = m) %>%
-        NormalizeData() %>%
-        SplitObject(split.by = "id")
+#     nl_lung <- subset(hlca, subset = sample %in% cases$sample)
+#     nl_lung$type <- "Healthy"
 
-    qs::qsave(normal_lung_nuclei, "output/rdata/normal_lung_nuclei.qs")
+#     nl_lung <- SplitObject(nl_lung, split.by = "sample")
 
-} else {
+#     qs::qsave(nl_lung, "hlca/nl_lung.qs")
 
-    normal_lung_nuclei <- qs::qread("output/rdata/normal_lung_nuclei.qs")
+# } else {
+#     nl_lung <- qs::qread("hlca/nl_lung.qs")
+# }
 
-}
-
-normal_lung <- c(normal_lung_cell, normal_lung_nuclei)
+nl_lung <- qs::qread("LungRefs/hlca_healthy_sample.qs")
+nl_lung$type <- "Healthy"
 ```
 
 # Load the osteosarcoma lung metastases
@@ -224,20 +210,20 @@ qs::qsave(met_lung, "output/rdata/met_lungs.qs")
 
 NOTE: if tumor cells have not been previously assigned for any of the samples, this script will error out with a message to run that code and create those samples before proceding.
 ```{r}
-if(!file.exists("output/rdata/met_lung_annotated.qs")) {
-    met_lung <- mclapply(seq_along(met_lung), function(s) {
-        message(paste("Starting sample", names(met_lung)[s], "..."))
-        o <- process_seurat(met_lung[[s]]) %>%
-            annotate()
-        message(paste0("Completed" , names(met_lung)[s], "."))
-        return(o)
-    }, mc.cores = parallelly::availableCores())
-    names(met_lung) <- mets_meta$Sample_Name
+# if(!file.exists("output/rdata/met_lung_annotated.qs")) {
+#     met_lung <- mclapply(seq_along(met_lung), function(s) {
+#         message(paste("Starting sample", names(met_lung)[s], "..."))
+#         o <- process_seurat(met_lung[[s]]) %>%
+#             annotate()
+#         message(paste0("Completed" , names(met_lung)[s], "."))
+#         return(o)
+#     }, mc.cores = parallelly::availableCores())
+#     names(met_lung) <- mets_meta$Sample_Name
 
-    qs::qsave(met_lung, "output/rdata/met_lung_annotated.qs")
-} else {
-    met_lung <- qs::qread("output/rdata/met_lung_annotated.qs")
-}
+#     qs::qsave(met_lung, "output/rdata/met_lung_annotated.qs")
+# } else {
+#     met_lung <- qs::qread("output/rdata/met_lung_annotated.qs")
+# }
 
 # Check to see if all of the relevant annotation files are present
 file_check <- TRUE
@@ -248,25 +234,42 @@ for(f in names(met_lung)) {
     }
 }
 
-# Skip this code if all files are present, otherwise will need to
-# be run manually to produce the annotation files
-if(!file_check) {
-    plots <- lapply(seq_along(met_lung), function(i) {
-        p1 <- r_dim_plot(met_lung[[i]], names(met_lung)[i])
-        p2 <- r_feature_plot(met_lung[[i]], "cell_scores")
-        p3 <- r_feature_plot(met_lung[[i]], "COL1A1")
-        p4 <- r_feature_plot(met_lung[[i]], "SPP1")
-        p5 <- r_feature_plot(met_lung[[i]], "nCount_RNA")
-        p6 <- DimPlot(met_lung[[i]], label = TRUE, group.by = "annotations") +
+# If all of the annotation files are present, then
+
+if (file_check) {
+# Separate the tumor cells from the lung stroma
+    met_stroma <- lapply(seq_along(met_lung), function (i) {
+        met_lung[[i]]$tumor <- qs::qread(file = paste0(
+            "misc/",
+            names(met_lung)[i],
+            "-tumor_assignments.qs"))
+        s <- subset(met_lung[[i]], tumor == "stroma") %>%
+            DietSeurat()
+        return(s)
+    })
+
+    names(met_stroma) <- names(met_lung)
+
+} else {
+    # Skip this code if all files are present, otherwise will need to
+    # be run manually to produce the annotation files
+    plots <- lapply(seq_along(met_stroma), function(i) {
+        p1 <- r_dim_plot(met_stroma[[i]], names(met_stroma)[i])
+        p2 <- r_feature_plot(met_stroma[[i]], "cell_scores")
+        p3 <- r_feature_plot(met_stroma[[i]], "COL1A1")
+        p4 <- r_feature_plot(met_stroma[[i]], "MYO1D")
+        tumor_cells <- met_stroma[[i]][[]] %>% filter(tumor == "tumor") %>% rownames()
+        p5 <- DimPlot(met_stroma[[i]], cells.highlight = tumor_cells) +
             theme(legend.position = "none") +
             coord_fixed()
-        p <- (p1 | p6 | p2) / (p3 | p4 | p5)
+        p6 <- r_dim_plot(met_stroma[[i]], label = TRUE, group.by = "annotations")
+        p <- (p1 | p6 | p2) / (p3 | p4 | p5) +
+            plot_annotation(title = names(met_stroma)[i])
         return(p)
     })
 
     # Code for manual curation. Designed for interactive review of plots.
-    i = 5
-    met_lung[[i]]$tumor <- "stroma"
+    i = 1
     plots[[i]]
 
     gt::gt(met_lung[[i]]@meta.data %>%
@@ -276,6 +279,7 @@ if(!file_check) {
         arrange(seurat_clusters, -n))
 
     # Use this code, changing cluster numbers, to designate tumor cells.
+    met_lung[[i]]$tumor <- "stroma"
     met_lung[[i]]$tumor[met_lung[[i]]$seurat_clusters == 5] <- "tumor"
 
     # Check result of tumor designation and save a list of tumor assignments.
@@ -283,17 +287,6 @@ if(!file_check) {
     qs::qsave(met_lung[[i]]$tumor,
         paste0("misc/", names(met_lung)[i], "-tumor_assignments.qs"))
 }
-
-# Separate the tumor cells from the lung stroma
-met_stroma <- lapply(seq_along(met_lung), function (i) {
-    met_lung[[i]]$tumor <- qs::qread(file = paste0(
-        "misc/",
-        names(met_lung)[i],
-        "-tumor_assignments.qs"))
-    s <- subset(met_lung[[i]], tumor == "stroma")
-    return(s)
-})
-names(met_stroma) <- names(met_lung)
 ```
 
 # Combine datasets from normal and met
@@ -302,85 +295,102 @@ Need to rewrite to make integration conditional on having been previously run***
 ```{r}
     # Check to see if integrated dataset has already been processed
 if(!file.exists("output/rdata/integrated_lungs.qs")) {
-    # Merge the normal and metastatic lung data into a single object
-    # Downsample the normal lung data
-    for(i in seq_along(normal_lung)) {
-        normal_lung[[i]] <- subset(normal_lung[[i]], downsample = 1000)
-    }
+    # # Merge the normal and metastatic lung data into a single object
+    # # Downsample the normal lung data
+    # for(i in seq_along(nl_lung)) {
+    #     nl_lung[[i]] <- subset(nl_lung[[i]], downsample = 1000)
+    #     nl_lung[[i]][["RNA"]]$counts <- as(nl_lung[[i]][["RNA"]]$counts,
+    #         Class = "dgCMatrix")
+    #     nl_lung[[i]] <- NormalizeData(nl_lung[[i]])}
 
-    param <- BiocParallel::MulticoreParam(workers = parallelly::availableCores() - 1)
+    # nl_lung <- merge(nl_lung[[1]], nl_lung[2:length(nl_lung)],
+    #     add.cell.ids = names(nl_lung)) %>%
+    #     JoinLayers()
+    nl_lung$id <- nl_lung$sample
+    nl_lung$method <- nl_lung$fresh_or_frozen
+    nl_lung <- subset(nl_lung, cells = sample(Cells(nl_lung), size = 19000))
 
-    lungs <- merge(normal_lung[[1]],
-            c(normal_lung[2:length(normal_lung)], met_stroma),
-            add.cell.ids = c(names(normal_lung), names(met_stroma))) %>%
+    met_stroma <- merge(met_stroma[[1]], met_stroma[2:length(met_stroma)],
+        add.cell.ids = names(met_stroma)) %>%
+        JoinLayers()
+
+    keep_features <- intersect(rownames(nl_lung), rownames(met_stroma))
+
+    nl_lung <- nl_lung[rownames(nl_lung) %in% keep_features, ]
+    met_stroma <- met_stroma[rownames(met_stroma) %in% keep_features, ]
+
+    lungs <- merge(met_stroma, nl_lung) %>%
+        JoinLayers() %>%
+        NormalizeData() %>%
         ScaleData() %>%
         FindVariableFeatures() %>%
         RunPCA(npcs = 30, verbose = FALSE) %>%
         harmony::RunHarmony(group.by.vars = c("id")) %>%
         RunUMAP(reduction = "harmony", dims = 1:30) %>%
-        FindNeighbors(reduction = "umap", dims = 1:2) %>%
+        FindNeighbors(reduction = "harmony", dims = 1:30) %>%
         FindClusters(resolution = 0.2)
 
-        qs::qsave(lungs, "output/rdata/integrated_lungs.qs")
+    lungs <- annotate(lungs)
+
+    qs::qsave(lungs, "output/rdata/integrated_lungs.qs")
+
 } else {
     lungs <- qs::qread("output/rdata/integrated_lungs.qs")
 }
 
 p1 <- r_dim_plot(subset(lungs, type == "Healthy"),
-    group.by = "cell_type",
+    group.by = "ann_level_2",
+    repel = TRUE,
     shuffle = TRUE)
 p2 <- r_dim_plot(subset(lungs, type == "Metastasis"),
     group.by = "annotations",
+    repel = TRUE,
     shuffle = TRUE)
 p3 <- r_dim_plot(lungs, "Integrated Stroma")
-p1 | p2 | p3
+p3 | p1 | p2
+
+r_dim_plot(lungs, split.by = "type", group.by = "ann_level_2", repel = TRUE)
 
 # Perform a semi-automated, manually verified cell type assignment
+# ***This needs to be redone since re-building the healthy lung reference
 if(!file.exists("misc/lungs_manual_assignment.qs")) {
-    gt::gt(lungs@meta.data %>%
-        mutate(integrated = coalesce(annotations, cell_type)) %>%
-        select(seurat_clusters, integrated) %>%
-        group_by(seurat_clusters, integrated) %>%
-        summarise(n = n()) %>%
-        arrange(seurat_clusters, -n))
 
     lungs <- RenameIdents(lungs,
-        `0` = "Endothelial",
-        `1` = "Mononuclear",
-        `2` = "Alveolar Epithelial",
-        `3` = "Mononuclear",
-        `4` = "Tumor Carryover",
-        `5` = "T/NK",
-        `6` = "Alveolar Epithelial",
-        `7` = "T/NK",
-        `8` = "Fibroblast",
-        `9` = "Mononuclear",
-        `10` = "Alveolar Epithelial",
-        `11` = "Alveolar Epithelial",
-        `12` = "Alveolar Epithelial",
-        `13` = "Mononuclear",
-        `14` = "T/NK",
-        `15` = "Airway Epithelial",
-        `16` = "Tumor Carryover",
-        `17` = "Stem/Proliferating",
-        `18` = "Granulocyte",
-        `19` = "B",
-        `20` = "Stem/Proliferating",
-        `21` = "Alveolar Epithelial",
-        `22` = "B",
-        `23` = "Endothelial",
-        `24` = "Endothelial",
-        `25` = "T/NK")
+        `0` = "Fibroblast",
+        `1` = "T/NK cell",
+        `2` = "Myeloid",
+        `3` = "Alveolar epithelium",
+        `4` = "Myeloid",
+        `5` = "Endothelial",
+        `6` = "T/NK cell",
+        `7` = "Alveolar epithelium",
+        `8` = "Differentiating",
+        `9` = "Stem/Proliferating",
+        `10` = "Smooth Muscle",
+        `11` = "Airway epithelium",
+        `12` = "Granulocyte",
+        `13` = "Airway epithelium",
+        `14` = "B cell",
+        `15` = "Alveolar epithelium",
+        `16` = "Endothelium",
+        `17` = "Myeloid",
+        `18` = "Alveolar epithelium",
+        `19` = "Fibroblast",
+        `20` = "Fibroblast",
+        `21` = "Myeloid",
+        `22` = "Alveolar epithelium")
 
     lungs$manual_assignments <- Idents(lungs)
     Idents(lungs) <- lungs$seurat_clusters
+
     qs::qsave(lungs$manual_assignments, "misc/lungs_manual_assignment.qs")
+
 } else {
     lungs$manual_assignments <- qs::qread("misc/lungs_manual_assignment.qs")
 }
 
 p3 <- r_dim_plot(lungs, "Manual Assignments", group.by = "manual_assignments")
-p1 | p2 | p3
+p3 | p1 | p2
 
 r_dim_plot(lungs, "Manual Assignments", group.by = "manual_assignments", split.by = "type")
 ```
@@ -389,18 +399,19 @@ r_dim_plot(lungs, "Manual Assignments", group.by = "manual_assignments", split.b
 
 ```{r}
 if(!file.exists("output/rdata/human_epithelial.qs")) {
-    epi <- subset(lungs,
-        manual_assignments == c("Alveolar Epithelial", "Stem/Proliferating"))
+    epi <- subset(lungs, manual_assignments == c(
+        "Alveolar epithelium", "Stem/Proliferating", "Differentiating"))
 
     # Reprocess the subsetted cells
     epi <- DietSeurat(epi, assays = "RNA") %>%
         FindVariableFeatures() %>%
         ScaleData() %>%
         RunPCA(npcs = 20, verbose = FALSE) %>%
-        harmony::RunHarmony(group.by.vars = c("src"), lambda = c(1)) %>%
-        RunUMAP(reduction = "harmony", dims = 1:20, seed.use = 555) %>%
-        FindNeighbors(reduction = "umap", dims = 1:2) %>%
-        FindClusters(resolution = 0.2)
+        harmony::RunHarmony(
+            group.by.vars = c("id", "method"), lambda = c(1, 0.5)) %>%
+        RunUMAP(reduction = "harmony", dims = 1:20) %>%
+        FindNeighbors(reduction = "harmony", dims = 1:20) %>%
+        FindClusters(resolution = 0.3)
 
     r_dim_plot(epi, group.by = "type")
     r_dim_plot(epi, group.by = "cell_type", repel = TRUE) +
@@ -429,25 +440,43 @@ if(!file.exists("output/rdata/human_epithelial.qs")) {
         harmony::RunHarmony(group.by.vars = c("src", "type"), lambda = c(1, 1)) %>%
         RunUMAP(reduction = "harmony", dims = 1:20, seed.use = 555) %>%
         FindNeighbors(reduction = "umap", dims = 1:2) %>%
-        FindClusters(resolution = 0.2)
+        FindClusters(resolution = 0.1)
+
+    p1 <- r_dim_plot(epi)
+    p2 <- r_dim_plot(epi, group.by = "cell_type", repel = TRUE) +
+        theme(legend.position = "right")
+    p1 | p2
+
+    r_dim_plot(epi, split.by = "type")
+
+    # Perform a global assessment of DEG
+    epi_marks <- FindAllMarkers(epi)
+
+    gt::gt(epi_marks %>%
+        group_by(cluster) %>%
+        slice_max(avg_log2FC, n = 20) %>%
+        arrange(cluster, -avg_log2FC)) %>%
+        gt::tab_header("DEGs in human AECs (by cluster)")
+
+    # One more cleanup - non-epithelial carryover
+    epi <- subset(epi, idents = c("9", "5", "7"), invert = TRUE)
+
+    # Reprocess the subsetted cells
+    epi <- RunPCA(epi, npcs = 20, verbose = FALSE) %>%
+        harmony::RunHarmony(group.by.vars = c("id", "method"), lambda = c(1, 0.5)) %>%
+        RunUMAP(reduction = "harmony", dims = 1:20, seed.use = 444) %>%
+        FindNeighbors(reduction = "umap", dims = 1:2) %>%
+        FindClusters(resolution = 0.3)
 
     epi <- kill_cc(epi)
     Idents(epi) <- epi$seurat_clusters
 
-    # Create a basaloid signature using genes identified in:
-    # https://doi.org/10.1038/s41467-022-33193-0
-    # https://doi.org/10.1186/s40246-022-00393-0
-    basaloid <- c(
-        "FOSL1",
-        "CD24",
-        "ITGB8",
-        "KRT17"
-    )
-    epi <- AddModuleScore(epi, features = basaloid, name = "Basaloid")
-
     r_dim_plot(epi, group.by = "type")
     r_dim_plot(epi, group.by = "cell_type")
     r_dim_plot(epi)
+
+# One last cleanup of non-epithelial cells
+epi <- subset(epi, idents = "8", invert = T)
 
     qs::qsave(epi, "output/rdata/human_epithelial.qs")
 } else {
@@ -481,42 +510,48 @@ r_feature_plot(epi, "TP63", min.cutoff = 1, split.by = "type")
 r_feature_plot(epi, "KRT5", split.by = "type")
 
 # Perform a global assessment of DEG
-epi_marks <- FindAllMarkers(epi, test.use = "MAST")
+epi_marks <- FindAllMarkers(epi)
 
 gt::gt(epi_marks %>%
     group_by(cluster) %>%
-    slice_max(abs(avg_log2FC), n = 20) %>%
+    slice_max(avg_log2FC, n = 20) %>%
     arrange(cluster, -avg_log2FC)) %>%
     gt::tab_header("DEGs in human AECs (by cluster)")
 
 # Assign cell types
-epi <- RenameIdents(epi,
-    `0` = "AEC1",
-    `1` = "AEC2",
+epi2 <- RenameIdents(epi,
+    `0` = "AEC2",
+    `1` = "AEC1",
     `2` = "Basaloid",
     `3` = "pAEC2",
-    `4` = "AEC2",
-    `6` = "Clara",
-    `7` = "Basaloid")
+    `4` = "Basaloid",
+    `5` = "AEC2",
+    `6` = "cAEC2",
+    `7` = "Basaloid",
+    `9` = "cAEC2",
+    `10` = "cAEC2")
 
-epi$epi_type <- Idents(epi)
+epi2$epi_type <- Idents(epi2)
 
-p2 <- r_dim_plot(epi,
+r_dim_plot(epi2,
     group.by = "epi_type",
     split.by = "type")
-layout <- "
-    AA
-    BC
-    DE"
-wrap_elements(full = p2) / (p5 | p6) / (p4 | p3)
-p2 + p5 + p6 + p4 + p3 + plot_layout(design = layout)
 
 # Consolidate into a summary dotplot
-epi_genes <- c( "SCGB1A1", "AES", "SFTPC", "ABCA3",
-    "AREG", "TP63", "KRT17", "ITGB8", "AGER", "CLIC5")
-epi$epi_type <- factor(epi$epi_type, levels = c("AEC1", "Basaloid", "pAEC2", "AEC2", "Clara"))
+epi_genes <- c(
+    "SFTPA1", "SFTPC", "PGC", # AEC2
+    "AREG", "MUC1", # pAEC2
+    "TOP2A", "MKI67", "CENPF", # cAEC2
+    "KRT17", "CDH2", "LAMB3", "FN1", # Basaloid
+    "AGER", "CAV1", "CLDN18") # AEC1
 
-DotPlot(epi, features = epi_genes, dot.scale = 8, group.by = "epi_type", cols = c("lightgoldenrod", "darkred")) +
+epi2$epi_type <- factor(epi2$epi_type, levels = c("AEC1", "Basaloid", "cAEC2", "pAEC2", "AEC2", 0:12))
+
+DotPlot(epi2,
+    features = epi_genes,
+    group.by = "epi_type",
+    dot.scale = 8,
+    cols = "RdBu") +
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
 
 ```
@@ -524,52 +559,205 @@ DotPlot(epi, features = epi_genes, dot.scale = 8, group.by = "epi_type", cols = 
 # Subcluster macrophages
 
 ```{r}
-macs <- subset(lungs,
-    manual_assignments == "Monocyte" |
-    manual_assignments == "Macrophage" |
-    manual_assignments == "Dendritic")
+if(!file.exists(output/rdata/human_macs.qs)) {
+    # macs <- subset(lungs,
+    #     manual_assignments %in% c(
+    #         "Myeloid",
+    #         "Stem/Proliferating",
+    #         "Differentiating"))
 
-# Filter out a group of type 2 AECs that got carried over in this subset
+    macs <- subset(lungs, idents = "2")
 
+    macs <- DietSeurat(macs, assays = "RNA") %>%
+        FindVariableFeatures() %>%
+        ScaleData() %>%
+        RunPCA(npcs = 30, verbose = FALSE) %>%
+        harmony::RunHarmony(
+            group.by.vars = c("id", "method"),
+            lambda = c(0.8, 0.5)) %>%
+        RunUMAP(reduction = "harmony", dims = 1:30) %>%
+        FindNeighbors(reduction = "harmony") %>%
+        FindClusters(resolution = 0.4)
 
-macs <- DietSeurat(macs, assays = "RNA") %>%
-    FindVariableFeatures() %>%
-    ScaleData() %>%
-    RunPCA(npcs = 20, verbose = FALSE) %>%
-    harmony::RunHarmony(group.by.vars = c("id", "type"), lambda = c(1, 1)) %>%
-    RunUMAP(reduction = "harmony", dims = 1:20) %>%
-    FindNeighbors(reduction = "harmony") %>%
-    FindClusters(resolution = 0.2)
+    p1 <- r_dim_plot(macs)
+    p2 <- r_dim_plot(subset(macs, subset = type == "Healthy"),
+        group.by = "cell_type",
+        repel = TRUE)
+    p3 <- r_dim_plot(subset(macs, subset = type == "Metastasis"),
+        group.by = "annotations",
+        repel = TRUE)
+    p1 + p2 + p3
+    r_dim_plot(subset(macs, subset = type == "Metastasis"),
+        group.by = "annotations",
+        repel = TRUE) +
+        theme(legend.position = "right")
 
-r_dim_plot(macs, "Macrophage Clustering")
+    # Check the odd clusters 3 and 10
+    head(FindMarkers(macs,
+        ident.1 = "3",
+        only.pos = TRUE) %>%
+        filter(pct.1 > 0.4) %>%
+        arrange(-avg_log2FC),
+        n = 30)
+    head(FindMarkers(macs,
+        ident.1 = "10",
+        only.pos = TRUE) %>%
+        filter(pct.1 > 0.4) %>%
+        arrange(-avg_log2FC),
+        n = 30)
 
-macs <- kill_cc(macs)
+    # Remove these tumor cells
+    macs <- subset(macs, idents = c("3", "10"), invert = TRUE)
 
-macs <- AddModuleScore(macs, features = basaloid, name = "Basaloid")
+    # Redo the UMAP
+    macs <- FindVariableFeatures(macs) %>%
+        ScaleData() %>%
+        RunPCA(npcs = 30, verbose = FALSE) %>%
+        harmony::RunHarmony(
+            group.by.vars = c("id", "method"),
+            lambda = c(0.8, 0.8)) %>%
+        RunUMAP(reduction = "harmony", dims = 1:30) %>%
+        FindNeighbors(reduction = "harmony") %>%
+        FindClusters(resolution = 0.4)
 
-qs::qsave(macs, "output/rdata/human_macsthelial.qs")
+    r_dim_plot(macs, split.by = "type", repel = TRUE)
 
-p1 <- r_dim_plot(macs,
-    group.by = "Phase", label = FALSE) +
-    ggtitle("Macrophages - Phase") +
-    theme(legend.position = "right")
-p2 <- r_dim_plot(subset(macs, type == "Healthy"),
-    group.by = "seurat_clusters") +
-    ggtitle("Macrophages - Healthy")
-p3 <- r_dim_plot(subset(macs, type == "Metastasis"),
-    group.by = "seurat_clusters") +
-    ggtitle("Macrophages - Metastasis")
-p4 <- r_feature_plot(macs, "CD47")
-p5 <- r_feature_plot(macs, "IL6")
-p6 <- r_feature_plot(macs, "IL1B")
-(p1 | p2 | p3) / (p5 | p6 | p4)
+    r_feature_plot(macs, "MARCO", split.by = "type")
+    r_feature_plot(macs, "CD68", split.by = "type")
+    r_feature_plot(macs, "MRC1", split.by = "type")
+    r_feature_plot(macs, "CCL3", split.by = "type")
+    r_feature_plot(macs, "TREM2", split.by = "type")
+    r_feature_plot(macs, "CD9", split.by = "type")
+    r_feature_plot(macs, "SPP1", split.by = "type")
+    r_feature_plot(macs, "GPNMB", split.by = "type")
+    r_feature_plot(macs, "FABP5", split.by = "type")
 
-Idents(macs) <- macs$seurat_clusters
-macs_marks <- FindAllMarkers(macs)
+    macs_marks <- FindAllMarkers(macs)
 
-gt::gt(macs_marks %>%
-    group_by(cluster) %>%
-    slice_max(abs(avg_log2FC), n = 20) %>%
-    arrange(cluster, -avg_log2FC)) %>%
-    gt::tab_header("DEGs in human mononuclear cells (by cluster)")
+    gt::gt(macs_marks %>%
+        group_by(cluster) %>%
+        filter(pct.1 > 0.4) %>%
+        slice_max(avg_log2FC, n = 20) %>%
+        arrange(cluster, -avg_log2FC)) %>%
+        gt::tab_header("DEGs in human mononuclear cells (by cluster)")
+
+    # Clean up the macrophage data (non-myeloid cells)
+    # Lots of contaminating tumor cells and alveolar macs, filter out
+    macs <- subset(macs, idents = c(
+        "3", # Tumor
+        "0"), # Alveolar macs
+        invert = TRUE)
+
+    macs <- ScaleData(macs) %>%
+        RunPCA(npcs = 30, verbose = FALSE) %>%
+        harmony::RunHarmony(
+            group.by.vars = c("id", "method"),
+            lambda = c(0.5, 0.5)) %>%
+        RunUMAP(reduction = "harmony", dims = 1:30) %>%
+        FindNeighbors(reduction = "umap", dims = 1:2) %>%
+        FindClusters(resolution = 0.2)
+
+    r_dim_plot(macs, split.by = "type")
+
+    macs_marks <- FindAllMarkers(macs)
+
+    gt::gt(macs_marks %>%
+        group_by(cluster) %>%
+        filter(pct.1 > 0.4) %>%
+        slice_max(avg_log2FC, n = 20) %>%
+        arrange(cluster, -avg_log2FC)) %>%
+        gt::tab_header("DEGs in human mononuclear cells (by cluster)")
+
+    # One last cleanup
+    macs <- subset(macs, idents = c(
+        "10", # Alveolar Macs
+        "13", # Plasmacytoid DCs
+        "8"), # Plasmacytoid DCs
+        invert = TRUE)
+
+    # These papers were helpful for identifying cell types:
+    # https://doi.org/10.1002%2Fctm2.1199
+    # https://doi.org/10.4049/jimmunol.2100094
+    # https://doi.org/10.1038/s41590-023-01468-3
+    # https://doi.org/10.1126%2Fscience.aah4573
+    macs2 <- RenameIdents(macs,
+        "0" = "TAMs",
+        "1" = "Lipid-associated",
+        "2" = "Scar-Macs",
+        "3" = "cMonocyte",
+        "4" = "DC2",
+        "5" = "Inflammatory",
+        "6" = "Cycling",
+        "7" = "ncMonocyte",
+        "9" = "ncMonocyte",
+        "11" = "TIMs",
+        "12" = "IFN-TAMs",
+        "14" = "TIMs",
+        "15" = "TIMs",
+        "16" = "DC2",
+        "17" = "DC1",
+        "18" = "DC3",
+        "19" = "DC2",
+        "20" = "Interstitial",
+        "21" = "DC2",
+        "22" = "Interstitial")
+
+    macs2$macs_assignment <- factor(Idents(macs2), levels = c(
+        "Scar-Macs",
+        "Lipid-associated",
+        "TAMs",
+        "IFN-TAMs",
+        "Inflammatory",
+        "Interstitial",
+        "TIMs",
+        "Cycling",
+        "ncMonocyte",
+        "cMonocyte",
+        "Pre-DC",
+        "DC1",
+        "DC2",
+        "DC3",
+        0:25))
+
+    r_dim_plot(macs2,
+        split.by = "type",
+        group.by = "macs_assignment",
+        repel = TRUE)
+
+    qs::qsave(macs2, "output/rdata/human_macs.qs")
+} else {
+    macs2 <- qs::qread("output/rdata/human_macs.qs")
+}
+
+r_dim_plot(macs2, split.by = "type", repel = TRUE)
+
+mac_features <- c(
+    "TREM2", "CD9", "SPP1", "GPNMB", # Scar-Macs
+    "ACP5", "LGALS3", "FABP5", # Lipid-associated
+    "MERTK", "MS4A7", # TAMs
+    "IFIT2", "IFIT3", # IFN-TAMS
+    "IL1B", "CXCL8", # Inflammatory
+    "LYVE1", "SELENOP", # Interstitial
+    "SPARC", "CLEC11A", # TIMs
+    "MKI67", "TOP2A", # Cycling
+    "IFITM1", "IFITM2", # ncMonocyte
+    "S100A8", "S100A9", # cMonocyte
+    "CLEC9A", "IRF8", # DC1
+    "FCER1A", "CD1E", # DC2
+    "CCR7", "LAMP3") # DC3
+
+DotPlot(macs2,
+    features = mac_features,
+    group.by = "macs_assignment",
+    cols = "RdBu",
+    col.max = 1.5,
+    col.min = -1) +
+    scale_y_discrete(limits = rev) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+    coord_fixed()
+
+r_dim_plot(macs2,
+    split.by = "type",
+    group.by = "seurat_clusters",
+    repel = TRUE)
 ```
