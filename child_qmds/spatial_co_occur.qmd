@@ -1,0 +1,62 @@
+## Look at which celltype occur together frequently
+
+```{r load_spatial_for_cor}
+spatial_data <- qs::qread("output/rdata/spatial_data_deconvoluted.qs")
+```
+
+```{r find_spatial_cor}
+#| cache.vars: cell_cor
+cell_data <-
+    spatial_data@meta.data %>%
+    select(
+        -orig.ident,
+        -nCount_Spatial,
+        -nFeature_Spatial,
+        -nCount_SCT,
+        -nFeature_SCT,
+        -x,
+        -y,
+        -sample_id,
+        -seurat_clusters,
+        -SCT_snn_res.1.5,
+        -tumor_markers1,
+        -cell,
+        -tumor
+    )
+
+cell_cor <- cor(cell_data, method = "spearman")
+```
+
+```{r plot_spatial_cor}
+pheatmap::pheatmap(
+    cell_cor,
+    filename = "output/figures/spatial/cell_cor_treated.png",
+    width = 10,
+    height = 10
+)
+
+plot_name <-
+    cell_cor %>%
+    as.data.frame() %>%
+    rownames_to_column("celltype1") %>%
+    mutate(celltype1 = as.factor(celltype1) %>%
+               fct_reorder(Tumor)) %>%
+    filter(celltype1 != "Tumor") %>%
+    ggplot(aes(x = "",
+               y = celltype1)) +
+    geom_tile(aes(fill = Tumor)) +
+    scale_fill_gradient2(
+        low = "blue",
+        high = "red",
+        mid = "white",
+        midpoint = 0,
+        name = "Correlation with\ntumor cells"
+    ) +
+    labs(x = NULL, y = NULL)
+ggsave(
+    "output/figures/spatial/cell_cor_plot.png",
+    plot_name,
+    width = 6,
+    height = 10
+)
+```
