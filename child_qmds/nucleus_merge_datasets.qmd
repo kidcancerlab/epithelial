@@ -12,22 +12,9 @@ DimPlot(merged_samples, group.by = "sample_id")
 
 The data looks fairly well integrated. All clusters contain cells from each sample.
 
-### Annotate After Merging
+## Annotate Single-Nucleus Data
 
-I also want to annotate the merged object. I'm annotating using the MouseRNAseqData and ImmGenData objects from celldex.
-
-```{r annotate-again}
-#Going to create a new seurat object
-#Join layers first
-merged_samples <- annotate_seurat(merged_samples, species = "mouse")
-
-# visualize annotations of new sample
-print(DimPlot(merged_samples, group.by = "annotations", label = TRUE, repel = TRUE))
-```
-
-## New Reference
-
-I realize that using a single cell dataset as my reference might lead to inappropriate cell type labels, such as adipocytes, astrocytes, hepatocytes, microglia, and neurons. Instead I'm going to use a snRNA-seq dataset as my reference for cell type annotations. The reference dataset is from "Single-Nucleus RNA-Sequencing Profiling of Mouse Lung. Reduced Dissociation Bias and Improved Rare Cell-Type Detection Compared with Single-Cell RNA Sequencing". The GEO accession number is GSE154998, and the metadata was received upon request from the authors.
+I'm going to use a snRNA-seq dataset as my reference for cell type annotations. The reference dataset is from "Single-Nucleus RNA-Sequencing Profiling of Mouse Lung. Reduced Dissociation Bias and Improved Rare Cell-Type Detection Compared with Single-Cell RNA Sequencing". The GEO accession number is GSE154998, and the metadata was received upon request from the authors.
 
 ```{r load-in-new-reference}
 sn_mouse_lung <- read.csv("input/GSE145998_Ctrl_mouse_Snuc_comb.dge.txt", sep = ",", header = TRUE) %>%
