@@ -3,7 +3,7 @@ We are interested in how the myeloid population in the treated samples compare t
 ## Subset Out Myeloid Cells
 
 ```{r}
-if (!exists("merged_samples")) merged_samples <- qs::qread("output/objects/merged_samples.qs")
+if (!exists("merged_samples")) merged_samples <- qs::qread("output/rdata/nucleus/merged_samples.qs")
 ```
 
 The first step to this analysis is to subset out the myeloid cells. I will do this according to the SingleR cell type predictions.
@@ -73,7 +73,7 @@ myeloid@meta.data <- myeloid@meta.data %>%
                                     `2` = "lipid macs",
                                     `3` = "contaminating cells"))
 
-qs::qsave(myeloid, "output/objects/myeloid.qs")
+qs::qsave(myeloid, "output/rdata/nucleus/myeloid.qs")
 
 #add variable for treated
 myeloid_cts <- myeloid@meta.data %>%
@@ -134,7 +134,7 @@ myeloid$treatment <- recode(myeloid$sample_id,
                             "S0283" = "Late Nintedanib",
                             "S0284" = "Early Nintedanib")
 
-pdf("output/figures/DimPlots/myeloid_split_umap.pdf", height = 5, width = 15)
+pdf("output/figures/nucleus/myeloid_split_umap.pdf", height = 5, width = 15)
 r_dim_plot(myeloid, group.by = "james_cell_type", split.by = "treatment")
 dev.off()
 
@@ -145,7 +145,7 @@ myeloid_cts <- myeloid@meta.data %>%
     dplyr::select(c(treatment, james_cell_type, total)) %>%
     unique()
 
-pdf("output/figures/myeloid_pct_plot.pdf")
+pdf("output/figures/nucleus/myeloid_pct_plot.pdf")
 ggplot(myeloid_cts, aes(fill = james_cell_type, y = total, x = treatment)) +
     geom_bar(position = "fill", stat = "identity")
 dev.off()
