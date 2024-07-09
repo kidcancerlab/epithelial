@@ -38,6 +38,9 @@ library(rrrSingleCellUtils)
 library(msigdbr)
 library(parallel)
 library(future)
+library(qreport)
+library(SummarizedExperiment)
+library(SingleR)
 
 # plan("multisession", workers = parallelly::availableCores())
 
