@@ -177,7 +177,7 @@ niche_macs$final_cell_type <-
 niche_cells@meta.data[colnames(niche_macs), ]$final_cell_type <-
     niche_macs$final_cell_type
 
-pdf("output/figures/DimPlots/niche_cell_split_umap.pdf", height = 6, width = 15)
+pdf("output/figures/nucleus/niche_cell_split_umap.pdf", height = 6, width = 15)
 r_dim_plot(niche_cells, group.by = "final_cell_type", split.by = "treatment")
 dev.off()
 ```
