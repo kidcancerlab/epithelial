@@ -1,3 +1,18 @@
+## Sample Info
+
+```{r sample-info}
+sample_info <- tribble(~sample_id,          ~treatment, ~species,
+                          "S0283", "nintedanib_day_28",  "mouse",
+                          "S0284",  "nintedanib_day_1",  "mouse",
+                          "S0291",       "new control",  "mouse")
+sample_info <- column_to_rownames(sample_info, "sample_id")
+
+#save sample_info
+write.table(sample_info, "input/sample_info.tsv")
+```
+
+These samples contain single nuclei transcriptomic data for three different samples from a particular study. Each sample was injected with F420 cells, and then was either not treated (S0291), treated with nintedanib one day after injection (S0284), or treated with nintedanib 28 days after injection (S0283).
+
 ## Read in Data
 
 I'm now going to read in the samples from the sample info table and create Seurat objects from them.
