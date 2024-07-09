@@ -45,7 +45,7 @@ These markers aren't very informative, I'm going to try comparing these datasets
 I want to re-run singler using two single-cell datasets: murine_aec and mouse_lung. The hope is that mouse_lung will correctly label these cells as lung epithelial, and then the murine_aec-based predictions will elucidate general cell type composition. However I will verify the final cell types with James. I'm going to merge `mouse_lung` and `murine_aec` for this.
 
 ```{r read-in-murine-aec}
-murine_aec <- qs::qread("/home/gdrobertslab/lab/Analysis/Ryan/epithelial/output/rdata/murine_aec_post-filtering.qs") %>%
+murine_aec <- qs::qread("/home/gdrobertslab/lab/Analysis/Ryan/epithelial/output/rdata/nucleus/murine_aec_post-filtering.qs") %>%
     process_seurat()
 murine_aec@meta.data <- murine_aec@meta.data %>%
     mutate(paper_cell_type =
@@ -165,9 +165,9 @@ I'm going to remove fibroblasts and endothelial cells before reclustering and la
 #                                     `5` = "AEC1",
 #                                     `6` = "endothelial",
 #                                     `7` = "pAEC2"))
-# qs::qsave(small_epi, "output/objects/small_epi.qs")
+# qs::qsave(small_epi, "output/rdata/small_epi.qs")
 
-old_small_epi <- qs::qread("output/objects/small_epi.qs")
+old_small_epi <- qs::qread("output/rdata/nucleus/small_epi.qs")
 
 cluster_membership <- list()
 for (i in sort(unique(small_epi$seurat_clusters))) {
@@ -221,9 +221,9 @@ small_epi@meta.data <- small_epi@meta.data %>%
                               "S0283" = "Late Nintedanib",
                               "S0284" = "Early Nintedanib"))
 
-qs::qsave(small_epi, "output/objects/new_small_epi.qs") 
+qs::qsave(small_epi, "output/rdata/nucleus/new_small_epi.qs") 
 
-pdf("output/figures/DimPlots/epithelial_split_umap.pdf", width = 12, height = 4)
+pdf("output/figures/nucleus/epithelial_split_umap.pdf", width = 12, height = 4)
 r_dim_plot(small_epi,
            group.by = "james_cell_type",
            split.by = "treatment",
@@ -238,7 +238,7 @@ small_epi_cts <- small_epi@meta.data %>%
     dplyr::select(c(treatment, james_cell_type, total)) %>%
     unique()
 
-pdf("output/figures/epithelial_pct_plot.pdf")
+pdf("output/figures/nucleus/epithelial_pct_plot.pdf")
 ggplot(small_epi_cts, aes(fill = james_cell_type, y = total, x = treatment)) +
     geom_bar(position = "fill", stat = "identity")
 dev.off()
