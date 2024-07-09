@@ -140,5 +140,5 @@ for (i in seq_len(nrow(merged_samples@meta.data))) {
         merged_samples$coarse_cell_type[i] <- "tumor"
     }
 }
-qs::qsave(merged_samples, "output/objects/merged_samples.qs")
+qs::qsave(merged_samples, "output/rdata/nucleus/merged_samples.qs")
 ```
