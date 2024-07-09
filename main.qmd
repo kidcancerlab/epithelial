@@ -56,6 +56,7 @@ for directoryName in \
   output \
   output/figures \
   output/figures/spatial \
+  output/figures/nucleus \
   output/rdata \
   output/de \
   results \
@@ -112,6 +113,26 @@ The subset macrophages from lung mets and primary tumors are saved to `output/rd
 ## Look at spatial correlation of cell types
 
 {{< include child_qmds/spatial_co_occur.qmd >}}
+
+## Read in and Process Data
+
+{{< include child_qmds/nucleus_load_process_data.qmd >}}
+
+## Merge Datasets
+
+{{< include child_qmds/nucleus_merge_datasets.qmd >}}
+
+## Epithelial Analysis
+
+{{< include child_qmds/nucleus_epithelial.qmd >}}
+
+## Myeloid Analysis
+
+{{< include child_qmds/nucleus_myeloid.qmd >}}
+
+## Final Cell Type Assignment
+
+{{< include child_qmds/nucleus_final_cell_type_assignment.qmd >}}
 
 ```{r sessionInfo}
 sessionInfo()
