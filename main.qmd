@@ -53,13 +53,14 @@ set.seed(888)
 ## Make up directory structure
 ```{bash mkdirs, eval=TRUE}
 for directoryName in \
-    output \
-    output/figures \
-    output/figures/spatial \
-    output/figures/nichenetr/ \
-    output/rdata \
-    output/de \
-    output/tables/nichenetr/
+  output \
+  output/figures \
+  output/figures/spatial \
+  output/rdata \
+  output/de \
+  results \
+  results/de \
+  results/cell_type_annotation
 do
     if [ ! -d ${directoryName} ]
     then
