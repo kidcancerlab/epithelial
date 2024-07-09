@@ -126,3 +126,26 @@ What the cell type abbreviations are
 - Peri: pericytes
 - SMC: smooth muscle cells
 - TC: T cells
+
+## Identify Cancer Cells
+
+I'm interested in seeing what clusters are cancer cells. To do this I will look at SingleR annotations and expression of cancer marker genes.
+
+```{r cancer-marker-exp}
+cancer_features <- c("Col1a1", "Col1a2", "Satb2", "Psmd4", "Mif", "Runx2")
+
+r_feature_plot(merged_samples, features = cancer_features, coord.fixed = TRUE, ncol = 3)
+DimPlot(merged_samples, label = TRUE)
+```
+
+Based on expression of these marker genes, as well as the cell type labels both with a single-cell reference and a single-nucleus reference, I think seurat cluster 2 is the cancer cells in this dataset.
+
+```{r label-tumor-cells}
+for (i in seq_len(nrow(merged_samples@meta.data))) {
+    if (merged_samples$seurat_clusters[i] == 2) {
+        merged_samples$sn_cell_type[i] <- "tumor"
+        merged_samples$coarse_cell_type[i] <- "tumor"
+    }
+}
+qs::qsave(merged_samples, "output/objects/merged_samples.qs")
+```
