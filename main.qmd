@@ -55,7 +55,10 @@ for directoryName in \
   output/figures \
   output/figures/spatial \
   output/rdata \
-  output/de
+  output/de \
+  results \
+  results/de \
+  results/cell_type_annotation
 do
   if [ ! -d ${directoryName} ]
   then
