@@ -1,0 +1,183 @@
+## Looking At Whole Dataset
+
+I'm going to see how the cell type proportions change in the whole dataset.
+
+First I need to add james' cell types into merged_samples
+
+I need to add the cell types from `small_epi` as well.
+
+```{r}
+merged_samples$james_cell_type <- merged_samples$coarse_cell_type
+merged_samples@meta.data[colnames(myeloid),]$james_cell_type <- myeloid$james_cell_type
+
+
+#now add in annotations from small_epi
+merged_samples@meta.data[colnames(small_epi),]$james_cell_type <- small_epi$james_cell_type
+merged_samples@meta.data <- merged_samples@meta.data %>%
+    mutate(james_cell_type = recode(james_cell_type,
+                                    `1` = "AEC2",
+                                    `2` = "AEC1",
+                                    `3` = "DATP",
+                                    `4` = "primed AEC2",
+                                    `5` = "FB",
+                                    `6` = "endothelial",
+                                    `7` = "pAEC2"))
+
+
+merged_samples$james_cell_type <- ifelse(merged_samples$seurat_clusters == 2,
+                                         "tumor",
+                                         merged_samples$james_cell_type)
+
+all_cts <- merged_samples@meta.data %>%
+    group_by(treatment, james_cell_type) %>%
+    mutate(total = n()) %>%
+    select("treatment", "james_cell_type", "total") %>%
+    unique() %>%
+    pivot_wider(names_from = "treatment", values_from = "total") %>%
+    column_to_rownames("james_cell_type")
+
+#convert NAs to 0s
+all_cts[is.na(all_cts)] <- 0
+
+round(prop.table(as.matrix(all_cts), margin = 2), 4)
+
+niche_cells <- subset(merged_samples, james_cell_type != "tumor") %>%
+    process_seurat()
+
+niche_cells$treatment <- recode(niche_cells$sample_id,
+                            "S0291" = "Control",
+                            "S0283" = "Late Nintedanib",
+                            "S0284" = "Early Nintedanib")
+```
+
+Cell types that are in niche_cells now
+
+"AEC1" = "Epithelial",
+"Mes" = "Mesothelial",
+"TAMs" = "Monocyte/Macrophage",
+"DATP" = "Epithelial",
+"AEC2" = "Epithelial",
+"Mac" = "Monocyte/Macrophage",
+"Endothelial" = "Endothelial",
+"FB" = "Fibroblast",
+"endothelial" = "Endothelial",
+"Scar-TAMs" = "Monocyte/Macrophage",
+"Peri" = "Smooth muscle cells",
+"Cil" = "Epithelial",
+"Club" = "Epithelial",
+"Interstitial" = "Monocyte/Macrophage",
+"T cell" = "T/NK cells",
+"B cell" = "B cell",
+"Epithelial" = "Epithelial",
+"Mono" = "Monocyte/Macrophage",
+"DC" = "Dendritic cell",
+"SMC" = "Smooth muscle cells",
+"pAEC2" = "Epithelial",
+"primed AEC2" = "Epithelial",
+"Bas" = "Granulocyte",
+"Angio-TAMs" = "Monocyte/Macrophage"
+
+## Add in These Cell Types
+
+```{r make-final-cell-types}
+niche_cells$final_cell_type <-
+    recode(niche_cells$james_cell_type,
+           "AEC1" = "Epithelial",
+           "Mes" = "Mesothelial",
+           "TAMs" = "Monocyte/Macrophage",
+           "DATP" = "Epithelial",
+           "AEC2" = "Epithelial",
+           "Mac" = "Monocyte/Macrophage",
+           "Endothelial" = "Endothelial",
+           "FB" = "Fibroblast",
+           "endothelial" = "Endothelial",
+           "Scar-TAMs" = "Monocyte/Macrophage",
+           "Peri" = "Smooth muscle cells",
+           "Cil" = "Epithelial",
+           "Club" = "Epithelial",
+           "Interstitial" = "Monocyte/Macrophage",
+           "T cell" = "T/NK cells",
+           "B cell" = "B cell",
+           "Epithelial" = "Epithelial",
+           "Mono" = "Monocyte/Macrophage",
+           "DC" = "Dendritic cell",
+           "SMC" = "Smooth muscle cells",
+           "cAEC2" = "Epithelial",
+           "pAEC2" = "Epithelial",
+           "Bas" = "Granulocyte",
+           "Angio-TAMs" = "Monocyte/Macrophage")
+
+r_dim_plot(niche_cells, group.by = "final_cell_type")
+```
+
+## Determine Proximal vs Distal Airway Cells
+
+```{r}
+epi_feats <- c("Scgb1a1", "Epcam", "Tuba1a", "Sftpd", "Ager", "Aqp5")
+
+final_epi <- subset(niche_cells, final_cell_type == "Epithelial") %>%
+    process_seurat()
+
+r_feature_plot(final_epi, features = epi_feats, coord.fixed = TRUE)
+
+r_dim_plot(final_epi)
+```
+
+Based on these pltos, specifically the expression of Scgb1a1 and Ager and Aqp5, I am led to believe that clusters 3 and 5 are proximal airway cells, and clusters 0, 1, 2, 4, 6, and 7 are distal airway cells.
+
+```{r add-epi-annotations-prox-dist}
+final_epi$final_cell_type <- recode(final_epi$seurat_clusters,
+                                    `0` = "Distal airway cell",
+                                    `1` = "Distal airway cell",
+                                    `2` = "Distal airway cell",
+                                    `3` = "Proximal airway cell",
+                                    `4` = "Distal airway cell",
+                                    `5` = "Proximal airway cell",
+                                    `6` = "Distal airway cell",
+                                    `7` = "Distal airway cell")
+
+#now I need to add these back to my niche_cells object
+niche_cells@meta.data[colnames(final_epi), ]$final_cell_type <-
+    final_epi$final_cell_type
+
+niche_cells$final_cell_type <- recode(niche_cells$final_cell_type,
+                                      `1` = "Distal airway cell",
+                                      `2` = "Proximal airway cell")
+
+#UMAP of niche cells
+r_dim_plot(niche_cells, group.by = "final_cell_type", split.by = "treatment")
+```
+
+## Determine Alveolar Macs
+
+```{r}
+mac_feats <- c("Itgam", "Fcgr1", "Cx3cr1", "Cd68", "Itgax", "Mertk")
+niche_macs <- subset(niche_cells, final_cell_type == "Monocyte/Macrophage") %>%
+    process_seurat()
+
+#feature plot to differentiate alveolar macs from other macs
+r_feature_plot(niche_macs, features = mac_feats, coord.fixed = TRUE, ncol = 3)
+
+r_dim_plot(niche_macs)
+```
+
+Based on this feature plot, I'm confident that clusters 2, 3, 5, and 7 are our alveolar macrophages.
+
+```{r add-alv-mac-annotations}
+niche_macs$final_cell_type <-
+    ifelse(niche_macs$seurat_clusters %in% c(2, 3, 5, 7),
+           "Alveolar macrophage",
+           "Monocyte/Macrophage")
+```
+
+## Add Annotations Back to niche_cells
+
+
+```{r}
+niche_cells@meta.data[colnames(niche_macs), ]$final_cell_type <-
+    niche_macs$final_cell_type
+
+pdf("output/figures/DimPlots/niche_cell_split_umap.pdf", height = 6, width = 15)
+r_dim_plot(niche_cells, group.by = "final_cell_type", split.by = "treatment")
+dev.off()
+```
