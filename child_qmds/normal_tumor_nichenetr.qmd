@@ -1,0 +1,358 @@
+## Read in required data for normal/tumor nichenetr analysis
+```{r normal_tumor_read}
+#| cache.vars: mouse_data
+murine_aec <-
+    qs::qread("output/rdata/murine_aec_post-filtering.qs") %>%
+    RenameIdents(
+        `0` = "DATP",
+        `1` = "AEC2",
+        `2` = "DATP",
+        `3` = "pAEC2",
+        `4` = "cAEC2",
+        `5` = "AEC1",
+        `6` = "cAEC2"
+    ) %>%
+    subset(sample_name == "S0066" | sample_name == "S0068")
+murine_aec$cell_type_fine <- Idents(murine_aec)
+
+b6_f420_combined <-
+    qs::qread("output/rdata/b6_f420_combined.qs") %>%
+    AddMetaData(qs::qread("misc/b6_f420_assignments.qs"))
+
+Idents(b6_f420_combined) <- "cell_type_final"
+
+mouse_data <-
+    subset(
+        b6_f420_combined,
+        idents = c(
+            "Monocyte/Macrophage",
+            "Alveolar macrophage",
+            "T/NK cell",
+            "B cell",
+            "Smooth muscle cell",
+            "Dendritic cell"
+        )
+    ) %>%
+    merge(murine_aec) %>%
+    process_seurat()
+
+DefaultAssay(mouse_data) <- "RNA"
+Idents(mouse_data) <- "cell_type_final"
+mouse_data[["SCT"]] <- NULL
+
+DimPlot(
+    mouse_data,
+    group.by = "cell_type_final",
+    label = TRUE,
+    split.by = "sample_name"
+)
+```
+
+## Prep nichenetr reference data
+```{r prep_nichenetr}
+#| cache.vars: c("lr_network", "ligand_target_matrix", "weighted_networks_lr")
+rrrSingleCellUtils:::load_lig_receptor_data()
+lr_network <-
+    rrrSingleCellUtils:::rrr_env$lr_network_strict %>%
+    mutate(from = nichenetr::convert_human_to_mouse_symbols(from),
+           to = nichenetr::convert_human_to_mouse_symbols(to)) %>%
+    drop_na()
+
+ligand_target_matrix <-
+    rrrSingleCellUtils:::rrr_env$ligand_target_matrix
+
+colnames(ligand_target_matrix) <-
+    ligand_target_matrix %>%
+    colnames() %>%
+    convert_human_to_mouse_symbols()
+
+rownames(ligand_target_matrix) <-
+    ligand_target_matrix %>%
+    rownames() %>%
+    convert_human_to_mouse_symbols()
+
+ligand_target_matrix <-
+    ligand_target_matrix %>%
+    .[!is.na(rownames(ligand_target_matrix)),
+        !is.na(colnames(ligand_target_matrix))]
+
+weighted_networks_lr <-
+    rrrSingleCellUtils:::rrr_env$weighted_networks_lr %>%
+    mutate(from = convert_human_to_mouse_symbols(from),
+           to = convert_human_to_mouse_symbols(to)) %>%
+    drop_na()
+```
+
+```{r nichenetr}
+#| cache.vars: nichenet_out
+all_cell_types <- unique(mouse_data$cell_type_final)
+
+celltype_de <- list()
+
+set.seed(1337)
+
+pdf("output/figures/nichenetr/nichenet_junk_plots.pdf")
+nichenet_out <-
+    parallel::mclapply(
+        all_cell_types,
+        mc.cores = parallel::detectCores(),
+        mc.preschedule = FALSE,
+        function(receiver_cell) {
+            sender_cells <-
+                grep(
+                    receiver_cell,
+                    unique(mouse_data$cell_type_final),
+                    value = TRUE,
+                    invert = TRUE
+                )
+
+            subset_data <-
+                subset(
+                    mouse_data,
+                    cell_type_final == receiver_cell
+                )
+
+            min_n_cells_de <- 10
+
+            n_control_cells <-
+                subset(subset_data, sample == "C57BL6") %>%
+                ncol()
+
+            n_tumor_lung_cells <-
+                subset(subset_data, sample == "F420") %>%
+                ncol()
+
+            if (min(n_control_cells, n_tumor_lung_cells) < min_n_cells_de) {
+                return("Not enough cells")
+            }
+
+            celltype_de[[receiver_cell]] <-
+                subset(mouse_data, cell_type_final == receiver_cell) %>%
+                FindMarkers(group.by = "sample",
+                            ident.1 = "C57BL6") %>%
+                filter(p_val_adj < 0.05)
+
+            celltype_de[[receiver_cell]] %>%
+            rownames_to_column("gene") %>%
+            write_tsv(paste0("output/tables/nichenetr/",
+                             str_replace(receiver_cell, "/", "_"),
+                             "_de.tsv"))
+
+            tumor_upregulated <-
+                celltype_de[[receiver_cell]] %>%
+                filter(avg_log2FC < 0) %>%
+                rownames_to_column("gene") %>%
+                pull(gene)
+
+            if (length(tumor_upregulated) < 10) {
+                return("Not enough DE genes")
+            }
+
+            nichenet_out <-
+                find_ligands(
+                    mouse_data,
+                    stringency = "strict",
+                    tumor_upregulated,
+                    receiver = receiver_cell,
+                    senders = sender_cells,
+                    gset_spec = "mouse",
+                    rec_spec = "mouse",
+                    send_spec = "mouse"
+                )
+
+
+            return(nichenet_out)
+        })
+dev.off()
+
+names(nichenet_out) <- all_cell_types
+```
+
+
+```{r}
+for (receiver_cell in all_cell_types) {
+    if (is.list(nichenet_out[[receiver_cell]])) {
+        plot_name <- plot_complex_heatmap(nichenet_out[[receiver_cell]])
+        ggsave(
+            paste0("output/figures/nichenetr/nichenet_heatmap_",
+                    str_replace(receiver_cell, "/", "_"),
+                    ".pdf"),
+            plot_name,
+            width = 15,
+            height = 6
+        )
+    } else {
+        print(paste(receiver_cell, "-", nichenet_out[[receiver_cell]]))
+    }
+}
+```
+
+Do the same thing with Cabo samples
+```{r}
+nint_receptors <-
+    c(
+        "Fgfr1", "Fgfr2", "Fgfr3", "Fgfr4",
+        "Pdgfra", "Pdgfrb",
+        "Src",
+        "Flt1", # VEGFR1
+        "Kdr", # VEGFR2
+        "Flt4" # VEGFR3
+    )
+
+ligand_receptors <-
+    rrrSingleCellUtils:::rrr_env$lr_network_strict %>%
+    mutate(from = nichenetr::convert_human_to_mouse_symbols(from),
+           to = nichenetr::convert_human_to_mouse_symbols(to)) %>%
+    filter(to %in% nint_receptors) %>%
+    select(-source, -database) %>%
+    dplyr::rename(ligand = "from", receptor = "to")
+
+nint_ligands <- unique(ligand_receptors$ligand)
+
+int_score_min <- 0.2
+
+Idents(mouse_data) <- "cell_type_final"
+
+# nint_ligand_expr <-
+#     AverageExpression(mouse_data, features = nint_ligands)$RNA %>%
+#     as.data.frame() %>%
+#     rownames_to_column("ligand") %>%
+#     pivot_longer(-ligand,
+#                  names_to = "sender_cell",
+#                  values_to = "ligand_expr")
+
+# nint_receptor_expr <-
+#     AverageExpression(mouse_data, features = nint_receptors)$RNA %>%
+#     as.data.frame() %>%
+#     rownames_to_column("receptor") %>%
+#     pivot_longer(-receptor,
+#                  names_to = "receiver_cell",
+#                  values_to = "receptor_expr")
+
+expressed_receptors <- list()
+for (receiver_cell in all_cell_types) {
+    if (is.list(nichenet_out[[receiver_cell]])) {
+        nn_receptors <-
+            nichenet_out[[receiver_cell]][[7]] %>%
+            rownames()
+        nn_nint_receptors <- nn_receptors[nn_receptors %in% nint_receptors]
+
+        # Get ligands upstream of nn_nint_receptors
+        nn_nint_ligands_receptor <-
+            nichenet_out[[receiver_cell]][[7]] %>%
+            as.data.frame() %>%
+            rownames_to_column("receptor") %>%
+            pivot_longer(
+                -receptor,
+                names_to = "ligand",
+                values_to = "weight"
+            ) %>%
+            filter(receptor %in% nn_nint_receptors & weight > int_score_min) %>%
+            mutate(receiver_cell = receiver_cell)
+
+        expressed_receptors[[receiver_cell]] <- nn_nint_ligands_receptor
+    }
+}
+
+nn_receptor_ligands <-
+    bind_rows(expressed_receptors)
+
+sub_l_t_mat <-
+    ligand_target_matrix[, unique(nn_receptor_ligands$ligand)] %>%
+    as.data.frame() %>%
+    rownames_to_column("gene") %>%
+    pivot_longer(
+        -gene,
+        names_to = "ligand",
+        values_to = "score"
+    )
+
+score_cutoff <- 0.002
+
+sub_l_t_mat %>%
+    ggplot(aes(x = score)) +
+    geom_histogram(bins = 200) +
+    facet_wrap(~ ligand, ncol = 1) +
+    scale_x_log10() +
+    geom_vline(xintercept = score_cutoff)
+
+sub_l_t_mat <-
+    sub_l_t_mat %>%
+    filter(score > score_cutoff)
+
+gene_lists <-
+    sub_l_t_mat %>%
+    select(-score) %>%
+    pivot_wider(names_from = ligand, values_from = gene) %>%
+    as.list()
+
+gene_lists <-
+    list(
+        Fgf1_downstream = gene_lists$Fgf1[[1]],
+        Fgf2_downstream = gene_lists$Fgf2[[1]],
+        Vegfa_downstream = gene_lists$Vegfa[[1]]
+    )
+
+mouse_data <-
+    AddModuleScore(
+        mouse_data,
+        features = gene_lists,
+        name = paste0(names(gene_lists), "_")
+    )
+
+FeaturePlot(mouse_data, features = c("Fgf1_1", "Fgf2_2", "Vegfa_3"))
+
+
+
+
+
+sub_data <- qs::qread("/gpfs0/home2/gdrobertslab/lab/Analysis/Matt/24_single-nuclei-nintedanib-study/output/objects/merged_samples.qs") %>%
+    subset(treatment != "nintedanib_day_1")
+
+epi_myeloid_data <-
+    merge(
+        qs::qread("/gpfs0/home2/gdrobertslab/lab/Analysis/Matt/24_single-nuclei-nintedanib-study/output/objects/new_small_epi.qs"),
+        list(
+            qs::qread("/gpfs0/home2/gdrobertslab/lab/Analysis/Matt/24_single-nuclei-nintedanib-study/output/objects/myeloid.qs"),
+            subset(sub_data, sn_cell_type == "tumor") %>%
+                AddMetaData("tumor", col.name = "james_cell_type")
+        )
+    ) %>%
+    subset(treatment != "nintedanib_day_1") %>%
+    process_seurat() %>%
+    AddModuleScore(
+        features = gene_lists,
+        name = paste0(names(gene_lists), "_")
+    )
+
+FeaturePlot(epi_myeloid_data, features = c("Fgf1_1", "Fgf2_2", "Vegfa_3"))
+
+VlnPlot(
+    epi_myeloid_data,
+    features = c("Fgf1_downstream_1", "Fgf2_downstream_2", "Vegfa_downstream_3"),
+    split.by = "treatment",
+    group.by = "james_cell_type",
+    ncol = 1
+) +
+    theme(legend.position = "top")
+
+test <-
+    AUCell::AUCell_run(GetAssayData(epi_myeloid_data), gene_lists) %>%
+    AUCell::getAUC() %>%
+    as.data.frame() %>%
+    t()
+
+epi_myeloid_data <- AddMetaData(epi_myeloid_data, test)
+
+VlnPlot(
+    epi_myeloid_data,
+    features = c("Fgf1_downstream", "Fgf2_downstream", "Vegfa_downstream"),
+    split.by = "treatment",
+    group.by = "james_cell_type",
+    ncol = 1
+) +
+    theme(legend.position = "top")
+
+FeaturePlot(epi_myeloid_data, features = c("Fgf1_downstream", "Fgf2_downstream", "Vegfa_downstream"))
+```
+

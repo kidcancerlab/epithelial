@@ -48,16 +48,18 @@ set.seed(888)
 ## Make up directory structure
 ```{bash mkdirs, eval=TRUE}
 for directoryName in \
-  output \
-  output/figures \
-  output/figures/spatial \
-  output/rdata \
-  output/de
+    output \
+    output/figures \
+    output/figures/spatial \
+    output/figures/nichenetr/ \
+    output/rdata \
+    output/de \
+    output/tables/nichenetr/
 do
-  if [ ! -d ${directoryName} ]
-  then
+    if [ ! -d ${directoryName} ]
+    then
     mkdir -p ${directoryName}
-  fi
+    fi
 done
 ```
 
