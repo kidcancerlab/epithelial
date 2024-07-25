@@ -18,6 +18,8 @@ b6_f420_combined <- merge(sobj_list[["C57BL6"]],
 ```{r b6_f420_2, dependson='b6_f420_1', eval=TRUE}
 # Check identities from SingleR calls and other meta
 r_dim_plot(b6_f420_combined, group.by = "seurat_clusters", split.by = "sample")
+b6_f420_combined <- run_fdl(b6_f420_combined, graph = "SCT_snn")
+r_dim_plot(b6_f420_combined, group.by = "seurat_clusters", split.by = "sample", reduction = "fdl")
 r_dim_plot(b6_f420_combined, group.by = "cell_type", split.by = "sample")
 r_feature_plot(b6_f420_combined, features = "cell_score", split.by = "sample")
 r_feature_plot(b6_f420_combined, features = "nCount_RNA", split.by = "sample")
@@ -35,44 +37,55 @@ if(file.exists("misc/b6_f420_assignments.qs")) {
     b6_f420_combined <- AddMetaData(b6_f420_combined,
         qs::qread("misc/b6_f420_assignments.qs"))
 } else {
+    b6_f420_combined[[]] %>%
+        select(seurat_clusters, cell_type, cell_score) %>%
+        arrange(seurat_clusters) %>%
+        group_by(seurat_clusters, cell_type) %>%
+        summarize(count = n(), score = ave(cell_score)) %>%
+        arrange(seurat_clusters, -count) %>%
+        unique() %>%
+        print(n = 1000)
+    
     # This list is manually curated from the SingleR assignments and scores
     # If run again, this needs to be checked for accuracy, as clusters may change
     b6_f420_combined <- RenameIdents(b6_f420_combined,
         `0` = "Monocyte/Macrophage",
-        `1` = "Endothelial cell",
-        `2` = "Alveolar macrophage",
-        `3` = "Monocyte/Macrophage",
-        `4` = "Alveolar macrophage",
-        `5` = "Monocyte/Macrophage",
+        `1` = "Alveolar macrophage",
+        `2` = "Monocyte/Macrophage",
+        `3` = "Alveolar macrophage",
+        `4` = "Monocyte/Macrophage",
+        `5` = "Endothelial cell",
         `6` = "Endothelial cell",
-        `7` = "T/NK cell",
-        `8` = "Fibroblast",
-        `9` = "Monocyte/Macrophage",
-        `10` = "B cell",
+        `7` = "Fibroblast",
+        `8` = "Endothelial cell",
+        `9` = "F420",
+        `10` = "Distal airway cell",
         `11` = "T/NK cell",
-        `12` = "Distal airway cell",
-        `13` = "Fibroblast",
-        `14` = "Upper airway cell",
+        `12` = "T/NK cell",
+        `13` = "Upper airway cell",
+        `14` = "B cell",
         `15` = "F420",
-        `16` = "Granulocyte",
-        `17` = "Dendritic cell",
-        `18` = "Erythrocyte",
-        `19` = "Monocyte/Macrophage",
+        `16` = "Monocyte/Macrophage",
+        `17` = "Granulocyte",
+        `18` = "Dendritic cell",
+        `19` = "Dendritic cell",
         `20` = "Upper airway cell",
-        `21` = "Alveolar macrophage",
-        `22` = "Monocyte/Macrophage",
-        `23` = "Pericyte",
-        `24` = "Distal airway cell",
-        `25` = "Monocyte/Macrophage",
-        `26` = "Adipocyte",
-        `27` = "Alveolar macrophage",
-        `28` = "Smooth muscle cell",
+        `21` = "Dendritic cell",
+        `22` = "Pericyte",
+        `23` = "T/NK cell",
+        `24` = "F420",
+        `25` = "T/NK cell",
+        `26` = "Monocyte/Macrophage",
+        `27` = "Mesothelial",
+        `28` = "LowQ",
         `29` = "LowQ",
-        `30` = "Endothelial cell",
-        `31` = "Mesothelial",
-        `32` = "Alveolar macrophage",
-        `33` = "Alveolar macrophage",
-        `34` = "LowQ")
+        `30` = "Alveolar macrophage",
+        `31` = "Alveolar macrophage",
+        `32` = "LowQ",
+        `33` = "Adipocyte",
+        `34` = "LowQ",
+        `35` = "Adipocyte",
+        `36` = "Alveolar macrophage")
 
     b6_f420_combined$cell_type_final <- Idents(b6_f420_combined)
 
@@ -80,8 +93,7 @@ if(file.exists("misc/b6_f420_assignments.qs")) {
     p2 <- r_dim_plot(b6_f420_combined, group.by = "seurat_clusters")
     p1 | p2
 
-    b6_f420_assignments <- data.frame(cell_type_final = b6_f420_combined$cell_type_final)
-    rownames(b6_f420_assignments) <- names(b6_f420_combined$cell_type_final)
+    b6_f420_assignments <- b6_f420_combined[["cell_type_final"]]
 
     qs::qsave(b6_f420_assignments, file = "misc/b6_f420_assignments.qs")
 }
@@ -92,7 +104,7 @@ if(file.exists("misc/b6_f420_assignments.qs")) {
 # Remove tumor cells, low quality cells, and erythrocytes
 Idents(b6_f420_combined) <- b6_f420_combined$cell_type_final
 b6_f420_combined <- subset(b6_f420_combined,
-    idents = c("LowQ", "Erythrocyte", "Mesothelial", "F420"),
+    idents = c("LowQ", "Mesothelial", "F420"),
     invert = TRUE)
 
 # Plot and save
@@ -115,7 +127,6 @@ mouse_marks <- c(
     "Foxl1", "Scgb1a1", "Epcam", # Proximal airway
     "Sftpd", "Ager", "Aqp5", # Distal airway
     "Pdgfra", "Ltbp4", "Gsn", # Fibroblast
-    "Mgp", "Myh11", "Acta2", # Smooth muscle
     "Cd19", "Cd79a", "Pax5", # B cell
     "Csf3r", "S100a9", "Mxd1", # Granulocyte
     "Apoc1", "Adipoq", "Retn", # Adipocyte
