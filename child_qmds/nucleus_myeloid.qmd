@@ -134,6 +134,9 @@ myeloid$treatment <- recode(myeloid$sample_id,
                             "S0283" = "Late Nintedanib",
                             "S0284" = "Early Nintedanib")
 
+# This has only seurat clusters 0 and 1 from the original myeloid object above
+qs::qsave(myeloid, "output/rdata/nucleus/myeloid_processed.qs")
+
 pdf("output/figures/nucleus/myeloid_split_umap.pdf", height = 5, width = 15)
 r_dim_plot(myeloid, group.by = "james_cell_type", split.by = "treatment")
 dev.off()
