@@ -180,6 +180,14 @@ for (receiver_cell in all_cell_types) {
             width = 15,
             height = 6
         )
+        qs::qsave(
+            plot_name,
+            paste0(
+                "output/figures/nichenetr/nichenet_heatmap_",
+                str_replace(receiver_cell, "/", "_"),
+                ".qs"
+            )
+        )
     } else {
         print(paste(receiver_cell, "-", nichenet_out[[receiver_cell]]))
     }
@@ -211,22 +219,6 @@ nint_ligands <- unique(ligand_receptors$ligand)
 int_score_min <- 0.2
 
 Idents(mouse_data) <- "cell_type_final"
-
-# nint_ligand_expr <-
-#     AverageExpression(mouse_data, features = nint_ligands)$RNA %>%
-#     as.data.frame() %>%
-#     rownames_to_column("ligand") %>%
-#     pivot_longer(-ligand,
-#                  names_to = "sender_cell",
-#                  values_to = "ligand_expr")
-
-# nint_receptor_expr <-
-#     AverageExpression(mouse_data, features = nint_receptors)$RNA %>%
-#     as.data.frame() %>%
-#     rownames_to_column("receptor") %>%
-#     pivot_longer(-receptor,
-#                  names_to = "receiver_cell",
-#                  values_to = "receptor_expr")
 
 expressed_receptors <- list()
 for (receiver_cell in all_cell_types) {
@@ -311,13 +303,6 @@ FeaturePlot(
         "Pdgfb_downstream_5"
     )
 )
-
-
-
-
-
-# sub_data <- qs::qread("/gpfs0/home2/gdrobertslab/lab/Analysis/Matt/24_single-nuclei-nintedanib-study/output/objects/merged_samples.qs") %>%
-#     subset(treatment != "nintedanib_day_1")
 ```
 
 ## Gather nuclear data
@@ -350,13 +335,12 @@ non_james_cells$treatment <-
 non_james_cells$coarse_cell_type[non_james_cells$sn_cell_type == "AM"] <- "AM"
 non_james_cells$coarse_cell_type[non_james_cells$sn_cell_type == "IM"] <- "IM"
 
-
 epi_myeloid_data <-
     merge(
         james_tams,
         list(james_epi, non_james_cells)
     ) %>%
-    subset(treatment != "Early Nintedanib") %>%
+    #subset(treatment != "Early Nintedanib") %>%
     process_seurat() %>%
     AddModuleScore(
         features = gene_lists,
@@ -370,13 +354,19 @@ plot_name <-
         split.by = "treatment",
         label = TRUE
     ) +
-    NoLegend()
+    NoLegend() +
+    coord_fixed()
 
 ggsave(
-    "output/figures/nichenetr/epi_myeloid_treatment.pdf",
+    "output/figures/nichenetr/epi_myeloid_treatment_dimplot.pdf",
     plot_name,
-    width = 10,
+    width = 15,
     height = 10
+)
+
+qs::qsave(
+    plot_name,
+    "output/figures/nichenetr/epi_myeloid_treatment_dimplot.qs"
 )
 
 FeaturePlot(
@@ -428,10 +418,15 @@ plot_name <-
         theme(legend.position = "top")
 
 ggsave(
-    "output/figures/nichenetr/epi_myeloid_treatment_vln.pdf",
+    "output/figures/nichenetr/epi_myeloid_treatment_aucell_vln.pdf",
     plot_name,
     width = 10,
     height = 15
+)
+
+qs::qsave(
+    plot_name,
+    "output/figures/nichenetr/epi_myeloid_treatment_aucell_vln.qs"
 )
 
 FeaturePlot(epi_myeloid_data, features = c("Fgf1_downstream", "Fgf2_downstream", "Vegfa_downstream"))
