@@ -42,6 +42,8 @@ library(qreport)
 library(SummarizedExperiment)
 library(SingleR)
 
+# plan("multisession", workers = parallelly::availableCores())
+
 # options(future.globals.maxSize = 2000 * 1024^2)
 
 # Set random generator seed to facilitate reproducibility
@@ -54,17 +56,20 @@ for directoryName in \
   output \
   output/figures \
   output/figures/spatial \
+  output/figures/nichenetr/ \
   output/figures/nucleus \
   output/rdata \
   output/de \
+  output/tables/nichenetr/ \
   results \
   results/de \
   results/cell_type_annotation
+
 do
-  if [ ! -d ${directoryName} ]
-  then
+    if [ ! -d ${directoryName} ]
+    then
     mkdir -p ${directoryName}
-  fi
+    fi
 done
 ```
 
@@ -102,7 +107,7 @@ The subset macrophages from lung mets and primary tumors are saved to `output/rd
 
 ## Generate a reference of F420 tumor cells from lung metastasis
 
-{{< include child_qmds/F420_ref.qmd >}}
+{{< include child_qmds/f420_ref.qmd >}}
 
 ## Run cell deconvolution on spatial data with spacexr
 
