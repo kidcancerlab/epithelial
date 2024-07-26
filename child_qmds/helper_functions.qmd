@@ -79,3 +79,281 @@ calc_logfc <- function(sobj,
     return(log_fc)
 }
 ```
+
+# A function to make output an sortable and copy-able datatable from a dataframe 
+interactive_dt <- function(df, rownames = FALSE) {
+    DT::datatable(data = df,
+                  rownames = rownames,
+                  extensions = c("FixedColumns",
+                                 "Buttons"),
+                  options = list(
+                    pageLength = 10,
+                    scrollX = TRUE,
+                    scrollCollapse = TRUE,
+                    dom = 'Bfrtip',
+                    buttons = c('copy',
+                                'csv',
+                                'excel')
+                  )
+    )
+}
+
+# Functions for recursive clustering
+recurluster <- function(sobj,
+                        level = 1,
+                        max_level = 3,
+                        min_cells = 0,
+                        data_type = "RNA",
+                        do_plots = TRUE,
+                        parallel = FALSE,
+                        meta_col_base = "clust",
+                        harmony = FALSE,
+                        harmony_factors = NULL,
+                        backup_resolution = 0.1,
+                        verbose = TRUE,
+                        level_messages = TRUE) {
+    if (verbose || level_messages) {
+        message("Clustering level ", level)
+    }
+
+
+    # can't do plots while parallelizing
+    if (parallel && do_plots) {
+        do_plots <- FALSE
+        message("Cannot plot while operating in parallel")
+    }
+
+    # number of PCs needs to be less than number of cells
+    pc_num <- min(50, length(Seurat::Cells(sobj)) - 1)
+
+    # Recluster at course resolution
+    temp_sobj <-
+        prep_recurl_data(sobj,
+                         level = level,
+                         data_type = data_type,
+                         parallel = parallel,
+                         harmony = harmony,
+                         harmony_factors = harmony_factors,
+                         backup_resolution = backup_resolution,
+                         verbose = verbose,
+                         pc_num = pc_num)
+
+    # Add new clusters to the Seurat object, at approprate level
+    if (level == 1) {
+        temp_sobj[[paste0(meta_col_base, "_", level)]] <-
+            paste0(meta_col_base, "_", temp_sobj$seurat_clusters)
+    } else {
+        temp_sobj[[paste0(meta_col_base, "_", level)]] <-
+            paste0(temp_sobj[[paste0(meta_col_base, "_", level - 1)]][, 1],
+                   ".",
+                   temp_sobj$seurat_clusters)
+    }
+
+    # Plot the clusters at this level
+    if (do_plots) {
+        Seurat::Idents(temp_sobj) <- temp_sobj[[paste0(meta_col_base,
+                                                       "_",
+                                                       level)]]
+        print(Seurat::DimPlot(temp_sobj, pt.size = 1) +
+            ggplot2::ggtitle(paste0("Level ", level))) +
+            ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5))
+    }
+
+    # If more than one cluster isolate and recurluster each cluster
+    # Also stop if we've reached the max level
+    if (temp_sobj$seurat_clusters %>%
+            as.character() %>%
+            as.numeric() %>%
+            max() > 0 &&
+        level < max_level) {
+
+        if (!parallel) {
+            sobj_list <-
+                lapply(unique(temp_sobj$seurat_clusters),
+                       function(x) re_recurluster(sobject = temp_sobj,
+                                                  cluster_num = x,
+                                                  level = level,
+                                                  min_cells = min_cells,
+                                                  data_type = data_type,
+                                                  do_plots = do_plots,
+                                                  parallel = parallel,
+                                                  verbose = verbose,
+                                                  harmony = harmony,
+                                                  harmony_factors = harmony_factors))
+        } else {
+            num_cores <- parallel::detectCores()
+            sobj_list <-
+                parallel::mclapply(unique(temp_sobj$seurat_clusters),
+                                   function(x) re_recurluster(sobject = temp_sobj,
+                                                              cluster_num = x,
+                                                              level = level,
+                                                              min_cells = min_cells,
+                                                              data_type = data_type,
+                                                              do_plots = do_plots,
+                                                              parallel = parallel,
+                                                              verbose = verbose,
+                                                              harmony = harmony,
+                                                              harmony_factors = harmony_factors),
+                                   mc.cores = num_cores)
+        }
+        # Merge the subclusters into a single Seurat object and pull metadata
+        returned_meta <-
+            merge(sobj_list[[1]],
+                  sobj_list[2:length(sobj_list)])@meta.data %>%
+            dplyr::select(dplyr::starts_with(meta_col_base))
+
+        sobj <- Seurat::AddMetaData(sobj, metadata = returned_meta)
+    }
+
+    # Fill in NAs in the clustser columns with parent cluster plus "_0"
+    for (clust_col in grep(paste0(meta_col_base, "_"),
+                           names(sobj@meta.data),
+                           value = TRUE) %>%
+            grep("clust_1", ., value = TRUE, invert = TRUE)) {
+        clust_num <- stringr::str_remove(clust_col,
+                                         paste0(meta_col_base, "_")) %>%
+            as.numeric()
+
+        sobj[[clust_col]] <-
+            sobj@meta.data %>%
+            as.data.frame() %>%
+            dplyr::mutate({{ clust_col }} :=
+                dplyr::if_else(is.na(get(clust_col)),
+                               paste0(get(paste0(meta_col_base, "_",
+                                                 clust_num - 1)),
+                                      "0"),
+                               get(clust_col))) %>%
+            dplyr::pull(get(clust_col))
+    }
+    return(sobj)
+}
+
+prep_recurl_data <- function(sobj,
+                             level = 1,
+                             data_type = "RNA",
+                             parallel = FALSE,
+                             harmony = FALSE,
+                             harmony_factors = NULL,
+                             backup_resolution = 0.1,
+                             verbose = TRUE,
+                             pc_num = 50) {
+    # Recluster at course resolution
+    reduction <- "pca"
+
+    # Need to check if within the harmony_factors metadata column there are more
+    # than one factor. If there are not, skip harmony
+    if (harmony) {
+        n_harmony_levels <-
+            sobj@meta.data[[harmony_factors]] %>%
+            unique() %>%
+            length()
+
+        if (n_harmony_levels == 1) {
+            harmony <- FALSE
+            message("Only one level in harmony_factors, skipping harmony for this subcluster")
+        }
+    }
+
+    if (data_type == "RNA") {
+        find_clust_alg <- 1
+
+        sobj <- sobj %>%
+            Seurat::FindVariableFeatures(verbose = verbose) %>%
+            Seurat::ScaleData(verbose = verbose) %>%
+            Seurat::RunPCA(verbose = verbose,
+                           npcs = pc_num,
+                           approx = FALSE)
+
+        if (harmony) {
+            if (is.null(harmony_factors)) {
+                stop("Must specify harmony_factors if harmony = TRUE")
+            }
+            reduction <- "harmony"
+            sobj <-
+                sobj %>%
+                harmony::RunHarmony(group.by.vars = harmony_factors,
+                                    verbose = verbose)
+        }
+
+        sobj <-
+            sobj %>%
+            Seurat::FindNeighbors(dims = 1:min(30, pc_num),
+                                  reduction = reduction,
+                                  verbose = verbose) %>%
+            Seurat::RunUMAP(dims = 1:min(10, pc_num),
+                            n.neighbors = min(30, pc_num / 2),
+                            reduction = reduction,
+                            verbose = verbose)
+
+        # this should be pulled out as a function and made common to atac/rna
+        if (ncol(sobj) < 60000) {
+            opt_res <-
+                optimize_silhouette(sobj,
+                                    test_res = seq(0.05, 0.3, by = 0.05),
+                                    summary_plot = FALSE) %>%
+                dplyr::arrange(sil_vals * -1) %>%
+                dplyr::pull(res_vals) %>%
+                head(n = 1)
+        } else {
+            opt_res <- backup_resolution
+        }
+
+
+    } else if (data_type == "ATAC") {
+        find_clust_alg <- 3
+
+        sobj <-
+            sobj %>%
+            Signac::RunTFIDF(verbose = verbose) %>%
+            Signac::FindTopFeatures(min.cutoff = "q25", verbose = verbose) %>%
+            Signac::RunSVD(verbose = verbose) %>%
+            Seurat::RunUMAP(reduction = "lsi",
+                            dims = 2:min(30, pc_num),
+                            verbose = verbose) %>%
+            Seurat::FindNeighbors(dims = 1:min(30, pc_num),
+                                  reduction = "lsi",
+                                  verbose = verbose)
+    }
+    sobj <- sobj %>%
+        Seurat::FindClusters(resolution = opt_res,
+                             algorithm = find_clust_alg,
+                             verbose = verbose)
+
+    return(sobj)
+}
+
+re_recurluster <- function(sobject,
+                           cluster_num,
+                           level,
+                           min_cells,
+                           data_type,
+                           do_plots,
+                           parallel,
+                           verbose,
+                           harmony = FALSE,
+                           harmony_factors = NULL) {
+    if (length(which(sobject$seurat_clusters == cluster_num)) > min_cells) {
+        if (verbose) {
+            message("Processing cluster ",
+                    cluster_num,
+                    " at level ",
+                    level)
+        }
+        sobj_out <-
+            recurluster(subset(sobject,
+                                subset = seurat_clusters == cluster_num),
+                        level = level + 1,
+                        min_cells = min_cells,
+                        data_type = data_type,
+                        do_plots = do_plots,
+                        harmony = harmony,
+                        harmony_factors = harmony_factors,
+                        parallel = parallel)
+    } else {
+        sobj_out <-
+            subset(sobject,
+                   subset = seurat_clusters == cluster_num)
+    }
+    return(sobj_out)
+}
+
