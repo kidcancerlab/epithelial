@@ -29,7 +29,6 @@ mouse_data <-
             "Alveolar macrophage",
             "T/NK cell",
             "B cell",
-            "Smooth muscle cell",
             "Dendritic cell"
         )
     ) %>%
@@ -40,7 +39,7 @@ DefaultAssay(mouse_data) <- "RNA"
 Idents(mouse_data) <- "cell_type_final"
 mouse_data[["SCT"]] <- NULL
 
-DimPlot(
+r_dim_plot(
     mouse_data,
     group.by = "cell_type_final",
     label = TRUE,
