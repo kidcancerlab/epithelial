@@ -5,6 +5,7 @@ all_sobj <-
     merge(sobj_list[[1]],
         sobj_list[2:length(sobj_list)],
         add.cell.ids = names(sobj_list)) %>%
+    JoinLayers() %>%
     process_seurat()
 qs::qsave(all_sobj, file = "output/rdata/all_sobj.qs")
 
@@ -50,7 +51,7 @@ p1 + p2 + p3
 qs::qsave(all_sobj, "output/rdata/all_sobj_integrated.qs")
 ```
 
-# Grab just macrophages and recursively cluster them
+# Grab just macrophages and sub cluster them
 ```{r immune, dependson='merge_all', eval=TRUE}
 if (!file.exists("misc/murine_macs.qs")) {
     mac_ids <- all_sobj@meta.data %>%
@@ -78,8 +79,7 @@ macs <- subset(all_sobj, cells = mac_ids) %>%
     FindNeighbors(reduction = "harmony", dims = 1:30) %>%
     FindClusters(resolution = seq(0.1, 0.8, 0.1))
 
-library(clustree)
-clustree(macs)
+clustree::clustree(macs)
 
 # A resolution of 0.2 looks pretty good
 macs$seurat_clusters <- macs$RNA_snn_res.0.2
