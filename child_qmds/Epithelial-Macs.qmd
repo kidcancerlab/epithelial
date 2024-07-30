@@ -79,7 +79,7 @@ macs <- subset(all_sobj, cells = mac_ids) %>%
     FindNeighbors(reduction = "harmony", dims = 1:30) %>%
     FindClusters(resolution = seq(0.1, 0.8, 0.1))
 
-clustree::clustree(macs)
+# clustree::clustree(macs)
 
 # A resolution of 0.3 looks pretty good
 macs$seurat_clusters <- macs$RNA_snn_res.0.3
@@ -112,6 +112,15 @@ if(!file.exists("output/rdata/macs_subclustered_cleaned.qs")) {
         arrange(cluster, -avg_log2FC)) %>%
         gt::tab_header(
             "DEGs in murine tumor-associated monouclear cells (before cleaning)")
+
+    mac_marks <- readxl("../../Yogesh/Finalmacrophage_and_monocyte_subsets.xlsx")
+
+    macs_matrix <- LayerData(
+        macs,
+        assay = "RNA",
+        layer = "counts")
+    
+    
     
     # Label against the murine tumor immune atlas 
     # https://doi.org/10.1101/gr.273300.120
