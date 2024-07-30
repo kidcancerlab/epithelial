@@ -81,8 +81,8 @@ macs <- subset(all_sobj, cells = mac_ids) %>%
 
 clustree::clustree(macs)
 
-# A resolution of 0.2 looks pretty good
-macs$seurat_clusters <- macs$RNA_snn_res.0.2
+# A resolution of 0.3 looks pretty good
+macs$seurat_clusters <- macs$RNA_snn_res.0.3
 Idents(macs) <- macs$seurat_clusters
 
 p1 <- r_dim_plot(macs, group.by = "seurat_clusters")
@@ -112,7 +112,23 @@ if(!file.exists("output/rdata/macs_subclustered_cleaned.qs")) {
         arrange(cluster, -avg_log2FC)) %>%
         gt::tab_header(
             "DEGs in murine tumor-associated monouclear cells (before cleaning)")
+    
+    # Label against the murine tumor immune atlas 
+    # https://doi.org/10.1101/gr.273300.120
+    tum_imm_atlas <- readRDS(
+        "../../../GenRef/sc_ref_datasets/mouse/tumor_imm_atlas/TICAtlas_downsampled.rds") %>%
+        as.SingleCellExperiment()
 
+    tams_assign <- SingleR::SingleR(
+        as.SingleCellExperiment(macs),
+        ref = tum_imm_atlas,
+        labels = tum_imm_atlas$lv2_annot
+        )
+    
+    sobject$cell_type <- cell_assign$labels
+    sobject$cell_score <- cell_assign$scores %>%
+        apply(MARGIN = 1, function(x) max(x, na.rm = TRUE))
+    
     # Clean up misclassified clusters
     macs <- subset(macs,
         idents = c(),
@@ -208,16 +224,20 @@ mac_genes <- c(
     "Il1a", "Fn1", "Arg1",  # Angio-TAMS
     "Top2a", "Hist1h1b", "Birc5",  # Cycling
     "Cd209a", "Il1r2", "H2-Ab1", # Pre-DC
-    "Clec9a", "Irf8",  # DC1
-    "Fscn1", "Ccl5")  # DC2
+    "Clec9a", "Irf8", "Flt3", "Ido1",  # DC1
+    "Fscn1", "Ccl5", "Cd1c", # DC2
+    "Lamp3", "Fcer1a", "Ccr7", # DC3
+    "Fabp4", "Mcemp1", "Cd52",  # Alveolar Macs
+    "Il1b", "Tnf", "Ccl4", "Ccl3") # Inflammatory TAMs
 
 DotPlot(macs,
     features = mac_genes,
-    group.by = "macs_assignment",
+    # group.by = "macs_assignment",
     cols = "RdBu",
     col.max = 1.5) +
     scale_y_discrete(limits = rev) +
-    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+    coord_fixed()
 
 macs$macs_assignment <- macs$macs_assignment %>%
     factor(levels = c(
