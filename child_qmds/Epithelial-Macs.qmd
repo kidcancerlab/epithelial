@@ -113,17 +113,56 @@ if(!file.exists("output/rdata/macs_subclustered_cleaned.qs")) {
         gt::tab_header(
             "DEGs in murine tumor-associated monouclear cells (before cleaning)")
 
-    mac_marks <- readxl("../../Yogesh/Finalmacrophage_and_monocyte_subsets.xlsx")
-
+    # Label against the murine tumor immune atlas 
+    # https://doi.org/10.1101/gr.273300.120
     macs_matrix <- LayerData(
         macs,
         assay = "RNA",
         layer = "counts")
+
+    mac_marks <- readxl::read_xlsx(
+        "misc/mac_mono_subsets.xlsx") %>%
+        filter(Species == "Mouse") %>%
+        select(Annotation, ID) %>%
+        group_by(Annotation) %>%
+        nest() %>%
+        as.list()
+    names(mac_marks$data) <- mac_marks$Annotation
+    mac_marks <- mac_marks$data
+    mac_sigs <- lapply(mac_marks, function(x) {
+        as.character(x) %>%
+            GSEABase::GeneSet()
+    })
     
-    
-    
-    # Label against the murine tumor immune atlas 
-    # https://doi.org/10.1101/gr.273300.120
+    mac_scores <- lapply(seq_along(mac_sigs), function(i) {
+        AUCell::AUCell_run(macs_matrix, mac_marks[[i]]) %>%
+        AUCell::getAUC() %>%
+        as.data.frame()
+    }) %>%
+        bind_rows() %>%
+        t() %>%
+        as.data.frame()
+    names(mac_scores) <- names(mac_marks)
+
+    macs <- AddMetaData(macs, mac_scores)
+
+    macs[[]] %>%
+        select(
+            seurat_clusters,
+            IFN_TAMs,
+            Inflam_TAMs,
+            LA_TAMs,
+            Angio_TAMs,
+            Reg_TAMs,
+            Prolif_TAMs,
+            RTM_TAMs,
+            cTIMs,
+            ncMonos) %>%
+        group_by(seurat_clusters) %>%
+        summarise_all(mean) %>%
+        print(n = nrow(.))
+
+
     tum_imm_atlas <- readRDS(
         "../../../GenRef/sc_ref_datasets/mouse/tumor_imm_atlas/TICAtlas_downsampled.rds") %>%
         as.SingleCellExperiment()
