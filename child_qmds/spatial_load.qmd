@@ -2,33 +2,276 @@
 
 ROB491D-1     SP0001      F420 lung met
 
-```{r loadData}
+```{r load_raw_data}
+raw_spatial_data <-
+    lapply(
+        c("SP0001", "SP0003", "SP0004"),
+        function(x) {
+            file_path <- paste0("/home/gdrobertslab/lab/Counts_2/", x, "/outs/")
+            temp <-
+                Load10X_Spatial(
+                    file_path,
+                    filename = "raw_feature_bc_matrix.h5",
+                    filter.matrix = FALSE
+                ) %>%
+            subset(nCount_Spatial > 0)
+
+            temp <-
+                AddMetaData(
+                    temp,
+                    GetTissueCoordinates(temp) %>%
+                        dplyr::rename("x_coord" = "x", "y_coord" = "y")
+                )
+            temp$log10_plus_nCount_Spatial <- log10(temp$nCount_Spatial + 1)
+            temp$sample_id <- x
+            return(temp)
+    })
+
+plot_name <-
+    SpatialFeaturePlot(
+        raw_spatial_data[[1]],
+        features = "log10_plus_nCount_Spatial",
+        pt.size.factor = 1
+    ) /
+    SpatialFeaturePlot(
+        raw_spatial_data[[2]],
+        features = "log10_plus_nCount_Spatial",
+        pt.size.factor = 1.5
+    ) /
+    SpatialFeaturePlot(
+        raw_spatial_data[[3]],
+        features = "log10_plus_nCount_Spatial",
+        pt.size.factor = 1.5
+    )
+
+ggsave(
+    "output/figures/spatial/raw_data_nCount_plot.pdf",
+    plot_name,
+    width = 15,
+    height = 20
+)
+qs::qsave(plot_name, file = "output/figures/spatial/raw_data_nCount_plot.qs")
+```
+
+```{r load_filt_data}
 #| cache.vars: spatial_data
 spatial_data <-
-    Load10X_Spatial("/home/gdrobertslab/lab/Counts_2/SP0001/outs/",
-                    filename = "filtered_feature_bc_matrix.h5") %>%
-    subset(nCount_Spatial > 0)
+    lapply(
+        c("SP0001", "SP0003", "SP0004"),
+        function(x) {
+            file_path <- paste0("/home/gdrobertslab/lab/Counts_2/", x, "/outs/")
+            temp <-
+                Load10X_Spatial(
+                    file_path,
+                    filename = "filtered_feature_bc_matrix.h5",
+                    filter.matrix = FALSE
+                ) %>%
+            subset(nCount_Spatial > 0)
 
-spatial_data <- AddMetaData(spatial_data, GetTissueCoordinates(spatial_data))
+            temp <-
+                AddMetaData(
+                    temp,
+                    GetTissueCoordinates(temp) %>%
+                    dplyr::rename("x_coord" = "x", "y_coord" = "y")
+                )
 
-GetTissueCoordinates(spatial_data) %>%
-    ggplot(aes(x = x, y = y)) +
-    geom_point()
+            temp$log10_plus_nCount_Spatial <- log10(temp$nCount_Spatial + 1)
+            temp$sample_id <- x
+            return(temp)
+    })
 
-# Filter out spots outside of the tissue
-subset(spatial_data, x > 0 & y > 0) %>%
-    SpatialPlot(features = "nCount_Spatial", pt.size.factor = 1) +
-    theme_bw()
+plot_name <-
+    SpatialFeaturePlot(
+        spatial_data[[1]],
+        features = "log10_plus_nCount_Spatial",
+        pt.size.factor = 1
+    ) /
+    SpatialFeaturePlot(
+        spatial_data[[2]],
+        features = "log10_plus_nCount_Spatial",
+        pt.size.factor = 1.5
+    ) /
+    SpatialFeaturePlot(
+        spatial_data[[3]],
+        features = "log10_plus_nCount_Spatial",
+        pt.size.factor = 1.5
+    )
 
-spatial_data <- subset(spatial_data, x > 0 & y > 0)
-spatial_data$sample_id <- "SP0001"
+ggsave(
+    "output/figures/spatial/filt_data_nCount_plot.pdf",
+    plot_name,
+    width = 15,
+    height = 20
+)
+qs::qsave(plot_name, file = "output/figures/spatial/filt_data_nCount_plot.qs")
+```
+
+## Split sections from each slide
+We will perform k-means clustering on the spatial coordinates to ID each section
+```{r splitSections}
+n_sections <-
+    list(
+        SP0001 = 1,
+        SP0003 = 3,
+        SP0004 = 4
+    )
+
+spatial_data <-
+    lapply(
+        spatial_data,
+        function(x) {
+            x_name <- x$sample_id[1]
+
+            k_means <-
+                x@meta.data %>%
+                select(x_coord, y_coord) %>%
+                dist() %>%
+                hclust()
+
+            group_labels <- cutree(k_means, n_sections[[x$sample_id[1]]])
+
+            x$section <- group_labels
+
+            x <- SplitObject(x, split.by = "section")
+
+            names(x) <- paste0(x_name, "_section_", seq_along(x))
+
+            return(x)
+        }
+    )
+
+spatial_data <-
+    lapply(
+        unlist(spatial_data),
+        function(x) {
+            x$mean_x <-
+                mean(x$x_coord) %>%
+                round()
+            x$mean_y <-
+                mean(x$y_coord) %>%
+                round()
+
+            return(x)
+    })
+
+mean_coords <- lapply(spatial_data, function(x) paste(x$mean_x[1], x$mean_y[1]))
+
+# ID'd by comparison to powerpoint from James
+coord_names <-
+    case_match(
+        as.character(mean_coords),
+        "12948 12973" ~ "Vehicle",                           # section 1
+        "14142 9790" ~ "Vehicle",                            # section 2
+        "5443 14524" ~ "Established Met late nintedanib",  # section 2
+        "7475 5098" ~ "Micro Mets early nintedanib",       # section 2
+        "13680 5559" ~ "Vehicle",                            # section 3
+        "5426 4206" ~ "Micro Mets early nintedanib",       # section 3
+        "5311 11486" ~ "Established Met late nintedanib",  # section 3
+        "12725 14116" ~ "Vehicle"                            # section 3
+    ) %>%
+    as.list()
+names(coord_names) <- names(mean_coords)
+
+# Add section names to each object
+# Also, rename the image to be more informative
+for (section_label in names(coord_names)) {
+    spatial_data[[section_label]]$section_name <-
+        paste0(
+            spatial_data[[section_label]]$sample_id[1],
+            "_",
+            coord_names[[section_label]]
+        )
+
+    names(spatial_data[[section_label]]@images) <-
+        paste0(
+            spatial_data[[section_label]]$sample_id[1],
+            "_",
+            str_replace_all(coord_names[[section_label]], " ", "_")
+        )
+}
+```
+
+
+## Filter extra spots in the distance
+```{r spatial_filter_and_merge}
+#| cache.vars: spatial_data
+plot_test <-
+    (SpatialFeaturePlot(
+        spatial_data[[3]],
+        features = "x_coord",
+        pt.size = 2
+    ) +
+        theme(legend.position = "right")) /
+    (SpatialFeaturePlot(
+        spatial_data[[3]],
+        features = "y_coord",
+        pt.size = 2
+    ) +
+        theme(legend.position = "right"))
+
+coord_cutoffs <-
+    tribble(
+        ~section,           ~x_min, ~x_max, ~y_min, ~y_max,
+        "SP0001_section_1", 0,      30000,  0,      30000,
+        "SP0003_section_1", 11000,  17000,  6000,   14000,
+        "SP0003_section_2", 0,      15000,  10000,  19000,
+        "SP0003_section_3", 1000,   15000,  0,      10000,
+        "SP0004_section_1", 10000,  20000,  0,      20000,
+        "SP0004_section_2", 1000,   20000,  1000,   20000,
+        "SP0004_section_3", 1000,   10000,  0,      17000,
+        "SP0004_section_4", 0,      20000,  10000,  20000
+    )
+
+for (section_label in names(spatial_data)) {
+    row_num <- which(coord_cutoffs$section == section_label)
+    spatial_data[[section_label]]$keep <-
+        spatial_data[[section_label]]$x_coord >
+                coord_cutoffs$x_min[row_num] &
+            spatial_data[[section_label]]$x_coord <
+                coord_cutoffs$x_max[row_num] &
+            spatial_data[[section_label]]$y_coord >
+                coord_cutoffs$y_min[row_num] &
+            spatial_data[[section_label]]$y_coord <
+                coord_cutoffs$y_max[row_num]
+}
+
+plot_name <-
+    merge(spatial_data[[1]], spatial_data[2:length(spatial_data)]) %>%
+        SpatialPlot(group.by = "keep", pt.size.factor = 4, ncol = 2)
+
+ggsave(
+    "output/figures/spatial/filtered_spots.pdf",
+    plot_name,
+    width = 15,
+    height = 15
+)
+
+spatial_data <-
+    merge(spatial_data[[1]], spatial_data[2:length(spatial_data)]) %>%
+    subset(keep == TRUE)
+```
+
+
+```{r merge_spatial}
+# x <-
+#     lapply(
+#         spatial_data,
+#         function(x) {
+#             SpatialPlot(x, group.by = "section_name") +
+#                 theme_void() +
+#                 NoLegend() +
+#                 labs(title = x$section_name[1])
+#     })
+
+# gridExtra::grid.arrange(grobs = x)
 ```
 
 ## Process the data
 ```{r processData}
+#| cache.vars: spatial_data
 spatial_data <-
     spatial_data %>%
-    SCTransform(assay = "Spatial") %>%
+    SCTransform(assay = "Spatial", verbose = FALSE) %>%
     RunPCA(assay = "SCT") %>%
     FindNeighbors(dims = 1:30) %>%
     FindClusters(resolution = 1.5)  %>%
@@ -37,9 +280,12 @@ spatial_data <-
 
 ## Add in module for tumor marker genes
 ```{r addTumorMarkers}
+#| cache.vars: spatial_data
 tumor_features <- c("Runx2", "Fn1", "Mki67", "Col1a1")
 spatial_data <-
     AddModuleScore(spatial_data, list(tumor_features), name = "tumor_markers")
+
+qs::qsave(spatial_data, file = "output/rdata/spatial_data_1.qs")
 ```
 
 ## Make some plots of the data
@@ -48,10 +294,11 @@ plot_name <-
     SpatialDimPlot(
         spatial_data,
         pt.size = 2,
-        label = TRUE
+        label = TRUE,
+        ncol = 2
     )
 ggsave(
-    "output/figures/spatial/spatial_dimplot_plot.png",
+    "output/figures/spatial/spatial_dimplot_plot.pdf",
     plot_name,
     width = 15,
     height = 15
@@ -64,7 +311,35 @@ plot_name <-
         repel = TRUE
     )
 ggsave(
-    "output/figures/spatial/spatial_umap_plot_by_cluster.png",
+    "output/figures/spatial/spatial_umap_plot_by_cluster.pdf",
+    plot_name,
+    width = 15,
+    height = 10
+)
+
+plot_name <-
+    DimPlot(
+        spatial_data,
+        label = TRUE,
+        repel = TRUE,
+        group.by = "sample_id"
+    )
+ggsave(
+    "output/figures/spatial/spatial_umap_plot_by_sample.pdf",
+    plot_name,
+    width = 15,
+    height = 10
+)
+
+plot_name <-
+    DimPlot(
+        spatial_data,
+        label = TRUE,
+        repel = TRUE,
+        group.by = "section_name"
+    )
+ggsave(
+    "output/figures/spatial/spatial_umap_plot_by_section.pdf",
     plot_name,
     width = 15,
     height = 10
@@ -74,13 +349,14 @@ plot_name <-
     SpatialPlot(
         spatial_data,
         features = tumor_features,
-        pt.size.factor = 2
+        pt.size.factor = 2,
+        ncol = 4
     )
 ggsave(
-    "output/figures/spatial/spatial_plot_by_feature.png",
+    "output/figures/spatial/spatial_plot_by_feature.pdf",
     plot_name,
-    width = 15,
-    height = 15
+    width = 20,
+    height = 25
 )
 
 vln_plot <-
@@ -91,7 +367,7 @@ vln_plot <-
         cols = sample(rainbow(50))
     )
 ggsave(
-    "output/figures/spatial/vln_plot.png",
+    "output/figures/spatial/vln_plot.pdf",
     vln_plot,
     width = 10,
     height = 5
@@ -100,14 +376,17 @@ ggsave(
 
 ## Split out tumor spots
 ```{r splitTumor}
+#| eval: FALSE
 col_cutoff <- 1
+
+########################## This needs work, not working as well as previously ##########################
 
 tumor_clusters <-
     spatial_data@meta.data %>%
     select(tumor_markers1, seurat_clusters) %>%
     rownames_to_column("spot") %>%
     group_by(seurat_clusters) %>%
-    summarize(tumor_median = median(tumor_markers1)) %>%
+    dplyr::summarize(tumor_median = median(tumor_markers1)) %>%
     arrange(desc(tumor_median)) %>% # Put them in order so we can use this later
     filter(tumor_median > col_cutoff) %>%
     pull(seurat_clusters)

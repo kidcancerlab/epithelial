@@ -6,7 +6,7 @@ macs$cell_type_orig <- macs$cell_type
 macs_celltypes <- qs::qread("misc/murine_macs_assignments.qs") %>%
     enframe() %>%
     column_to_rownames("name") %>%
-    rename(cell_type = value)
+    dplyr::rename(cell_type = "value")
 
 macs <- AddMetaData(macs, macs_celltypes)
 macs <- subset(macs, cell_type %in% unique(macs$cell_type))
@@ -111,8 +111,13 @@ spacexr_reference <-
 spatial_data <- qs::qread("output/rdata/spatial_data.qs")
 
 coords <-
-    GetTissueCoordinates(spatial_data) %>%
-    select(-cell)
+    lapply(
+        Images(spatial_data),
+        function(x) {
+            GetTissueCoordinates(spatial_data, image = x) %>%
+                select(-cell)
+        }) %>%
+    bind_rows()
 
 my_data <-
     spacexr::SpatialRNA(coords,
@@ -122,8 +127,9 @@ my_data <-
 ## Run the RCTD analysis with spacexr
 ```{r run_decomposition}
 #| cache.vars: rctd_out
+# Need to have the doSNOW package installed
 rctd_obj <-
-    spacexr::create.RCTD(my_data, spacexr_reference, max_cores = 2)
+    spacexr::create.RCTD(my_data, spacexr_reference, max_cores = 10)
 
 rctd_out <-
     spacexr::run.RCTD(rctd_obj, doublet_mode = "full")
@@ -148,17 +154,21 @@ for (cell_type in all_ref$cell_type %>% unique()) {
     plot_name <-
         SpatialFeaturePlot(
             subset_data,
-            features = c(cell_type, "Tumor"),
+            features = cell_type,
             ncol = 2,
-            pt.size.factor = 2.5
+            pt.size.factor = 4
         )
 
-    ggsave(paste0("output/figures/spatial/spacexr_",
-                  cell_type,
-                  ".png"),
-           plot_name,
-           width = 10,
-           height = 10)
+    ggsave(
+        paste0(
+            "output/figures/spatial/spacexr_",
+            cell_type,
+            ".pdf"
+        ),
+        plot_name,
+        width = 10,
+        height = 20
+    )
 }
 ```
 
