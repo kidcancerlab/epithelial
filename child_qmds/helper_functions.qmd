@@ -15,11 +15,20 @@
 annot_cells <- function(sobject) {
     cell_assign <- SingleR::SingleR(
         as.SingleCellExperiment(sobject),
-        ref = list(GetAssayData(mouse_lung_ref), mouse_immune, mouse_rna),
+        ref = list(
+            GetAssayData(mouse_lung_ref),
+            mouse_immune,
+            mouse_rna,
+            GetAssayData(f420_culture),
+            GetAssayData(k7m2_culture)
+        ),
         labels = list(
             mouse_lung_ref$cell_type,
             mouse_immune$label.main,
-            mouse_rna$label.fine),
+            mouse_rna$label.fine,
+            f420_culture$cell_type,
+            k7m2_culture$cell_type
+        ),
         aggr.ref = TRUE)
     sobject$cell_type <- cell_assign$labels
     sobject$cell_score <- cell_assign$scores %>%
@@ -80,7 +89,7 @@ calc_logfc <- function(sobj,
 }
 ```
 
-# A function to make output an sortable and copy-able datatable from a dataframe 
+# A function to make output an sortable and copy-able datatable from a dataframe
 interactive_dt <- function(df, rownames = FALSE) {
     DT::datatable(data = df,
                   rownames = rownames,
