@@ -103,17 +103,20 @@ qs::qsave(macs, "output/rdata/macs_subclustered.qs")
 ```{r macs, dependson='immune', eval=TRUE}
 if(!file.exists("output/rdata/macs_subclustered_cleaned.qs")) {
     r_dim_plot(macs, split.by = "tissue")
+    macs <- run_fdl(macs)
+    r_dim_plot(macs, split.by = "tissue", reduction = "fdl")
 
     deg_macs_1 <- FindAllMarkers(macs)
 
     gt::gt(deg_macs_1 %>%
         group_by(cluster) %>%
+        filter(pct.1 >0.2) %>%
         slice_max(avg_log2FC, n = 20) %>%
         arrange(cluster, -avg_log2FC)) %>%
         gt::tab_header(
             "DEGs in murine tumor-associated monouclear cells (before cleaning)")
 
-    # Label against the murine tumor immune atlas 
+    # Label against the murine tumor immune atlas
     # https://doi.org/10.1101/gr.273300.120
     macs_matrix <- LayerData(
         macs,
@@ -129,11 +132,12 @@ if(!file.exists("output/rdata/macs_subclustered_cleaned.qs")) {
         as.list()
     names(mac_marks$data) <- mac_marks$Annotation
     mac_marks <- mac_marks$data
+
     mac_sigs <- lapply(mac_marks, function(x) {
         as.character(x) %>%
             GSEABase::GeneSet()
     })
-    
+
     mac_scores <- lapply(seq_along(mac_sigs), function(i) {
         AUCell::AUCell_run(macs_matrix, mac_marks[[i]]) %>%
         AUCell::getAUC() %>%
@@ -162,24 +166,28 @@ if(!file.exists("output/rdata/macs_subclustered_cleaned.qs")) {
         summarise_all(mean) %>%
         print(n = nrow(.))
 
+    auc_plots <- lapply(names(mac_scores), function(i) {
+        r_feature_plot(macs, i, min.cutoff = 0.2, max.cutoff = 0.6)
+    })
+    wrap_plots(auc_plots, ncol = 4)
 
-    tum_imm_atlas <- readRDS(
-        "../../../GenRef/sc_ref_datasets/mouse/tumor_imm_atlas/TICAtlas_downsampled.rds") %>%
-        as.SingleCellExperiment()
 
-    tams_assign <- SingleR::SingleR(
-        as.SingleCellExperiment(macs),
-        ref = tum_imm_atlas,
-        labels = tum_imm_atlas$lv2_annot
-        )
-    
-    sobject$cell_type <- cell_assign$labels
-    sobject$cell_score <- cell_assign$scores %>%
-        apply(MARGIN = 1, function(x) max(x, na.rm = TRUE))
-    
     # Clean up misclassified clusters
     macs <- subset(macs,
-        idents = c(),
+        idents = c(
+            6, # Epithelial
+            8, # Fibroblast
+            9, # Unknown, Tumor?
+            10, # Endothelial
+            11, # Lymphocytes
+            12, # Unknown, Tumor?
+            13, # Alveolar macs
+            16, # Fibroblasts
+            17, # Goblet
+            18, # Erythrocyte
+            19, # Neural
+            20 # Mast
+        ),
         invert = TRUE)
 
     # Reprocess and plot
@@ -192,11 +200,25 @@ if(!file.exists("output/rdata/macs_subclustered_cleaned.qs")) {
         FindNeighbors(reduction = "harmony", dims = 1:30) %>%
         FindClusters(resolution = seq(0.1, 0.8, 0.1))
 
-    clustree(macs)
+    plots <- parallel::mclapply(
+        c(0.01, 0.1, 0.3, 1, 3),
+        function(i) {
+            RunUMAP(macs,
+                reduction = "harmony",
+                dims = 1:30,
+                min.dist = i,
+                spread = 5,
+                ) %>%
+            r_dim_plot()
+    }, mc.cores = parallelly::availableCores())
+    wrap_plots(plots, ncol = 3)
 
-    # A resolution of 0.3 looks pretty good
-    macs$seurat_clusters <- macs$RNA_snn_res.0.3
-    Idents(macs) <- macs$seurat_clusters
+    # A resolution of 0.5 looks pretty good
+    Idents(macs) <- macs$RNA_snn_res.0.8
+    r_dim_plot(macs, split.by = "tissue")
+
+    macs <- run_fdl(macs)
+    r_dim_plot(macs, split.by = "tissue", reduction = "fdl")
 
     qs::qsave(macs, "output/rdata/macs_subclustered_cleaned.qs")
 } else {
