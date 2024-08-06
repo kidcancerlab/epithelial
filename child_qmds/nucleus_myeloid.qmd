@@ -1,0 +1,155 @@
+We are interested in how the myeloid population in the treated samples compare to that in the untreated sample. This will include looking at what subpopulations are enriched, what genes are differentially expressed, and what pathways are differentially regulated.
+
+## Subset Out Myeloid Cells
+
+```{r}
+if (!exists("merged_samples")) merged_samples <- qs::qread("output/rdata/nucleus/merged_samples.qs")
+```
+
+The first step to this analysis is to subset out the myeloid cells. I will do this according to the SingleR cell type predictions.
+
+```{r subset-myeloid}
+myeloid <- subset(merged_samples,
+                  coarse_cell_type %in% c("Bas",
+                                          "DC",
+                                          "Mac",
+                                          "Mono")) %>%
+    process_seurat()
+
+# Visualize new umap
+DimPlot(myeloid, split.by = "treatment", pt.size = 1)
+```
+
+### Find Markers for Each Cluster
+
+```{r myeloid-cluster-markers}
+myeloid_degs <- FindAllMarkers(myeloid)
+write.table(myeloid_degs, "results/de/myeloid_degs.tsv")
+```
+
+### Find Markers for Each Cell Type
+
+I'm now going to find markers for each cell type as labelled by `sn_cell_type`
+
+```{r myeloid-subtype-markers}
+Idents(myeloid) <- myeloid$sn_cell_type
+myeloid_subtype_degs <- FindAllMarkers(myeloid)
+write.table(myeloid_subtype_degs, "results/de/myeloid_subtype_degs.tsv")
+```
+
+## Cell Proportions
+
+I'm interested in seeing the proportions of cell types across each sample.
+
+### In Automated Annotations
+
+This will look at the sn_cell_type column
+
+```{r}
+myeloid@meta.data %>%
+    group_by(sample_id, sn_cell_type) %>%
+    mutate(total = n()) %>%
+    select("sample_id", "sn_cell_type", "total") %>%
+    unique() %>%
+    pivot_wider(names_from = "sample_id", values_from = "total")
+```
+
+### Add James' Annotations
+
+Before he makes annotations, James is interested in subsetting clusters 0 and 1 and re-analyzing them since the scar macs and angio macs are difficult to separate out with the other myeloid populations present. The cells from these clusters are what
+will be considered for further analysis.
+
+```{r}
+myeloid <- subset(myeloid, seurat_clusters  %in% c(0,1)) %>%
+    process_seurat()
+
+DimPlot(myeloid, label = TRUE)
+
+#For this new subset, James made the following annotations:
+myeloid@meta.data <- myeloid@meta.data %>%
+    mutate(james_cell_type = recode(seurat_clusters,
+                                    `0` = "TAM",
+                                    `1` = "scar + angio macs",
+                                    `2` = "lipid macs",
+                                    `3` = "contaminating cells"))
+
+qs::qsave(myeloid, "output/rdata/nucleus/myeloid.qs")
+
+#add variable for treated
+myeloid_cts <- myeloid@meta.data %>%
+    group_by(treatment, james_cell_type) %>%
+    mutate(total = n()) %>%
+    select("treatment", "james_cell_type", "total") %>%
+    unique() %>%
+    pivot_wider(names_from = "treatment", values_from = "total") %>%
+    column_to_rownames("james_cell_type")
+#replace NAs with 0
+myeloid_cts[is.na(myeloid_cts)] <- 0
+
+myeloid_props <- prop.table(as.matrix(myeloid_cts), margin = 2)
+
+fisher.test(myeloid_cts, simulate.p.value = TRUE)
+```
+
+## Recursive Clustering on Myeloid Cells
+
+I think it will be useful to recursively cluster the myeloid object and possibly uncover more clusters that weren't identified by seurat clustering.
+
+```{r recurluster-myeloid}
+myeloid <- recurluster(myeloid,
+                       do_plots = FALSE)
+
+DimPlot(myeloid,group.by = c("seurat_clusters",
+                             "clust_1",
+                             "clust_2"))
+
+Idents(myeloid) <- myeloid$clust_2
+
+reclustered_myeloid_degs <- FindAllMarkers(myeloid, only.pos = TRUE)
+write.table(reclustered_myeloid_degs, "results/de/reclustered_myeloid_degs.tsv")
+```
+
+
+### Reannotate Recursive Clusters
+
+Based on these DEGs James labelled cell types to be consistent with those in Fig 3.
+
+```{r annotate-recurlusters}
+myeloid <- subset(myeloid, clust_2 != "clust_0.1")
+
+myeloid@meta.data <- myeloid@meta.data %>%
+    mutate(james_cell_type = recode(clust_2,
+                                    "clust_0.0" = "TAMs",
+                                    "clust_1.0" = "Scar-TAMs",
+                                    "clust_1.1" = "Interstitial",
+                                    "clust_20" = "Angio-TAMs"))
+```
+
+### Visualize New Annotations
+
+```{r visualize-recurluster-annotations}
+#rename treatment variable
+myeloid$treatment <- recode(myeloid$sample_id,
+                            "S0291" = "Control",
+                            "S0283" = "Late Nintedanib",
+                            "S0284" = "Early Nintedanib")
+
+# This has only seurat clusters 0 and 1 from the original myeloid object above
+qs::qsave(myeloid, "output/rdata/nucleus/myeloid_processed.qs")
+
+pdf("output/figures/nucleus/myeloid_split_umap.pdf", height = 5, width = 15)
+r_dim_plot(myeloid, group.by = "james_cell_type", split.by = "treatment")
+dev.off()
+
+### pct bar plot
+myeloid_cts <- myeloid@meta.data %>%
+    group_by(james_cell_type, treatment) %>%
+    mutate(total = n()) %>%
+    dplyr::select(c(treatment, james_cell_type, total)) %>%
+    unique()
+
+pdf("output/figures/nucleus/myeloid_pct_plot.pdf")
+ggplot(myeloid_cts, aes(fill = james_cell_type, y = total, x = treatment)) +
+    geom_bar(position = "fill", stat = "identity")
+dev.off()
+```

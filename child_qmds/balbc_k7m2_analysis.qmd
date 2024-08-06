@@ -134,7 +134,13 @@ DotPlot(balb_k7m2_combined,
 
 # Create frequency plots of stromal and immune cells
 subset(balb_k7m2_combined,
-    idents = c("Mono", "Mac", "DC", "NK/T", "B", "Granulo", "Alv Mac"))@meta.data %>%
+    idents = c(
+        "Monocyte/Macrophage",
+        "Alveolar macrophage",
+        "T/NK cell",
+        "Dendritic cell",
+        "B cell",
+        "Granulocyte"))@meta.data %>%
     ggplot(aes(sample, fill = cell_type_final)) +
         geom_bar(position = "fill") +
         theme_classic()
@@ -144,7 +150,13 @@ ggsave("output/figures/balb_immune.pdf",
     height = 4)
 
 subset(balb_k7m2_combined,
-    idents = c("Endo", "Peri", "SMC", "Fibroblast", "Lower Airway", "Upper Airway"))@meta.data %>%
+    idents = c(
+        "Endothelial cell",
+        "Upper airway cell",
+        "Distal airway cell",
+        "Fibroblast",
+        "Adipocyte",
+        "Pericyte"))@meta.data %>%
     ggplot(aes(sample, fill = cell_type_final)) +
         geom_bar(position = "fill") +
         theme_classic()

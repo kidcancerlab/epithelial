@@ -1,0 +1,90 @@
+## Sample Info
+
+```{r sample-info}
+sample_info <- tribble(~sample_id,          ~treatment, ~species,
+                          "S0283", "nintedanib_day_28",  "mouse",
+                          "S0284",  "nintedanib_day_1",  "mouse",
+                          "S0291",       "new control",  "mouse")
+sample_info <- column_to_rownames(sample_info, "sample_id")
+
+#save sample_info
+write.table(sample_info, "input/sample_info.tsv")
+```
+
+These samples contain single nuclei transcriptomic data for three different samples from a particular study. Each sample was injected with F420 cells, and then was either not treated (S0291), treated with nintedanib one day after injection (S0284), or treated with nintedanib 28 days after injection (S0283).
+
+## Read in Data
+
+I'm now going to read in the samples from the sample info table and create Seurat objects from them.
+
+```{r make-objects}
+path0 <- "/home/gdrobertslab/lab/Counts_2/"
+path1 <- "/filtered_feature_bc_matrix/"
+
+sample_list <- list()
+for (id in rownames(sample_info)) {
+    tmp_sobj <- tenx_load_qc(paste0(path0, id, path1),
+                             violin_plot = FALSE,
+                             species_pattern = "",
+                             mt_pattern = "^mt-")
+
+    tmp_sobj$treatment <- sample_info[id, ]$treatment
+    tmp_sobj$sample_id <- id
+    sample_list[[id]] <- tmp_sobj
+}
+```
+
+## Quality Control
+
+I'm going to subset out dead/dying cells and likely multiplets based on the number of RNA fragments in each cell as well as the percentage of reads that are from mitochondrial genes.
+
+```{r qc-plots, results="asis"}
+qc_plots <- lapply(sample_list,
+                   feature_hist,
+                   features = c("nCount_RNA", "percent.mt"))
+
+maketabs(qc_plots)
+```
+
+Since the samples are nuclei-sequenced the percent of mitochondrial reads is miniscule, and it doesn't make sense to subset with respect to this value so I will only set cutoffs based on nCount_RNA.
+
+```{r make-cutoffs}
+cutoff_table <-
+    tribble(~sample_id,     ~feature, ~min_val, ~max_val,
+            "S0283",    "nCount_RNA",     1000,    10000,
+            "S0284",    "nCount_RNA",     1000,     9000,
+            "S0291",    "nCount_RNA",     1000,    25000) %>%
+    column_to_rownames("sample_id")
+
+#loop through each sample, subset, and create a feature hist with cutoffs
+plts_w_cutoffs <- list()
+for (id in names(sample_list)) {
+    tmp_cuts <- cutoff_table[id, ]
+    
+    #add plot to list
+    plts_w_cutoffs[[id]] <- feature_hist(sample_list[[id]],
+                                         features = "nCount_RNA",
+                                         cutoff_table = tmp_cuts)
+
+    #subset object
+    sample_list[[id]] <- 
+        subset(sample_list[[id]],
+               nCount_RNA %in% c(tmp_cuts$min_val:tmp_cuts$max_val)) %>%
+        process_seurat()
+
+}
+```
+
+```{r plot-w-cutoffs, results = "asis"}
+maketabs(plts_w_cutoffs)
+```
+
+Another way of checking the overall quality of the sample is by looking at how it clusters. If there is just one giant cluster then it likely means the sample is worse, and if there are separate clusters (which likely are individual cell types) then the sample is of good quality.
+
+```{r make-umap-list, results = "asis"}
+umap_list <- lapply(sample_list, DimPlot)
+
+maketabs(umap_list)
+```
+
+Each dataset looks to be good quality based on the clustering.

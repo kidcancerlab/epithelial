@@ -4,86 +4,131 @@ Process into a shared UMAP space
 ```{r b6_f420_1, dependson='load_raw', eval=TRUE}
 sobj_list <- qs::qread("output/rdata/sobj_list.qs")
 
-b6_f420_combined <- merge(sobj_list[["C57BL6"]],
+set.seed(1337)
+b6_f420_combined <-
+    merge(
+        sobj_list[["C57BL6"]],
         y = sobj_list[["F420"]],
-        add.cell.ids = c("C57BL6", "F420")) %>%
+        add.cell.ids = c("C57BL6", "F420")
+    ) %>%
     SCTransform(verbose = FALSE) %>%
     RunPCA(npcs = 30, verbose = FALSE) %>%
-    RunUMAP(dims = 1:30, seed.use = 22, verbose = FALSE) %>%
-    FindNeighbors(k.param = 30, reduction = "umap", dims = 1:2, verbose = FALSE) %>%
+    RunUMAP(dims = 1:30, verbose = FALSE) %>%
+    FindNeighbors(k.param = 30, verbose = FALSE) %>%
     FindClusters(resolution  = 0.3, verbose = FALSE)
 ```
 
-### Inspect identities from SingleR calls and other meta
+### Assign cell types to the combined object
 ```{r b6_f420_2, dependson='b6_f420_1', eval=TRUE}
-# Check identities from SingleR calls and other meta
-r_dim_plot(b6_f420_combined, group.by = "seurat_clusters", split.by = "sample")
-r_dim_plot(b6_f420_combined, group.by = "cell_type", split.by = "sample")
-r_feature_plot(b6_f420_combined, features = "cell_score", split.by = "sample")
-r_feature_plot(b6_f420_combined, features = "nCount_RNA", split.by = "sample")
-r_feature_plot(b6_f420_combined, features = "Col1a1", split.by = "sample")
-r_feature_plot(b6_f420_combined, features = "Col1a2", split.by = "sample")
-
-p1 <- r_dim_plot(b6_f420_combined, group.by = "cell_type", repel = TRUE)
-p2 <- r_dim_plot(b6_f420_combined, group.by = "seurat_clusters")
-p1 | p2
-```
-
-### Rename clusters based on the calls
-```{r b6_f420_3, dependson='b6_f420_1', eval=TRUE}
-if(file.exists("misc/b6_f420_assignments.qs")) {
+if (file.exists("misc/b6_f420_assignments.qs")) {
     b6_f420_combined <- AddMetaData(b6_f420_combined,
         qs::qread("misc/b6_f420_assignments.qs"))
 } else {
-    # This list is manually curated from the SingleR assignments and scores
-    # If run again, this needs to be checked for accuracy, as clusters may change
-    b6_f420_combined <- RenameIdents(b6_f420_combined,
-        `0` = "Monocyte/Macrophage",
-        `1` = "Endothelial cell",
-        `2` = "Alveolar macrophage",
-        `3` = "Monocyte/Macrophage",
-        `4` = "Alveolar macrophage",
-        `5` = "Monocyte/Macrophage",
-        `6` = "Endothelial cell",
-        `7` = "T/NK cell",
-        `8` = "Fibroblast",
-        `9` = "Monocyte/Macrophage",
-        `10` = "B cell",
-        `11` = "T/NK cell",
-        `12` = "Distal airway cell",
-        `13` = "Fibroblast",
-        `14` = "Upper airway cell",
-        `15` = "F420",
-        `16` = "Granulocyte",
-        `17` = "Dendritic cell",
-        `18` = "Erythrocyte",
-        `19` = "Monocyte/Macrophage",
-        `20` = "Upper airway cell",
-        `21` = "Alveolar macrophage",
-        `22` = "Monocyte/Macrophage",
-        `23` = "Pericyte",
-        `24` = "Distal airway cell",
-        `25` = "Monocyte/Macrophage",
-        `26` = "Adipocyte",
-        `27` = "Alveolar macrophage",
-        `28` = "Smooth muscle cell",
-        `29` = "LowQ",
-        `30` = "Endothelial cell",
-        `31` = "Mesothelial",
-        `32` = "Alveolar macrophage",
-        `33` = "Alveolar macrophage",
-        `34` = "LowQ")
+    b6_f420_combined@meta.data <-
+        b6_f420_combined@meta.data %>%
+        rownames_to_column("cell_id") %>%
+        left_join(
+            read_tsv("misc/coarse_types.tsv", show_col_types = FALSE),
+            by = "cell_type"
+        ) %>%
+        column_to_rownames("cell_id")
 
-    b6_f420_combined$cell_type_final <- Idents(b6_f420_combined)
+    sil_scoring <-
+        optimize_silhouette(
+            b6_f420_combined,
+            test_res = seq(0.1, 1, by = 0.05),
+            summary_plot = FALSE
+        ) %>%
+        arrange(desc(sil_vals))
 
-    p1 <- r_dim_plot(b6_f420_combined, group.by = "cell_type_final", repel = TRUE)
+    b6_f420_combined <-
+        FindClusters(
+            b6_f420_combined,
+            resolution = sil_scoring$res_vals[1]
+        )
+
+    tentative_assignments <-
+        b6_f420_combined@meta.data %>%
+        select(cell_type_coarse, seurat_clusters) %>%
+        group_by(seurat_clusters, cell_type_coarse) %>%
+        dplyr::summarize(n = n(), .groups = "drop") %>%
+        group_by(seurat_clusters) %>%
+        arrange(desc(n)) %>%
+        select(-n) %>%
+        dplyr::rename(tentative = "cell_type_coarse") %>%
+        slice_head(n = 1)
+
+    b6_f420_combined@meta.data <-
+        b6_f420_combined@meta.data %>%
+        rownames_to_column("cell_id") %>%
+        left_join(tentative_assignments, by = "seurat_clusters") %>%
+        column_to_rownames("cell_id")
+
+    # Check identities from SingleR calls and other meta
+    table(
+        b6_f420_combined$cell_type_coarse,
+        b6_f420_combined$seurat_clusters
+    ) %>%
+        pheatmap::pheatmap(
+            scale = "column",
+            display_numbers = TRUE,
+            cluster_cols = FALSE,
+            filename = "output/figures/b6_f420_cluster_assignments_heatmap.png",
+            width = 12,
+            height = 6
+        )
+    # unclear clusters: 24, 23, 6, 26
+
+    DimPlot(
+        b6_f420_combined,
+        cells.highlight = WhichCells(b6_f420_combined, idents = 6)
+    )
+
+    clusters_remove <- c(6, 23, 24, 26)
+
+    b6_f420_combined <-
+        subset(
+            b6_f420_combined,
+            idents = clusters_remove,
+            invert = TRUE
+        ) %>%
+        SCTransform(verbose = FALSE) %>%
+        RunPCA(npcs = 30, verbose = FALSE) %>%
+        RunUMAP(dims = 1:30, verbose = FALSE) %>%
+        FindNeighbors(k.param = 30, verbose = FALSE) %>%
+        FindClusters(verbose = FALSE)
+
+    b6_f420_combined$cell_type_final <- b6_f420_combined$tentative
+
+    DimPlot(
+        b6_f420_combined,
+        group.by = c("seurat_clusters", "cell_type_final"),
+        split.by = "sample",
+        label = TRUE,
+        repel = TRUE
+    ) +
+        NoLegend()
+
+    qs::qsave(b6_f420_combined, file = "output/rdata/b6_f420_combined_all.qs")
+
+
+    qs::qsave(
+        b6_f420_combined[["cell_type_final"]],
+        file = "misc/b6_f420_assignments.qs"
+    )
+
+    r_dim_plot(b6_f420_combined, group.by = "seurat_clusters", split.by = "sample")
+    b6_f420_combined <- run_fdl(b6_f420_combined, graph = "SCT_snn")
+    r_dim_plot(b6_f420_combined, group.by = "seurat_clusters", split.by = "sample", reduction = "fdl")
+    r_dim_plot(b6_f420_combined, group.by = "cell_type", split.by = "sample")
+    r_feature_plot(b6_f420_combined, features = "cell_score", split.by = "sample")
+    r_feature_plot(b6_f420_combined, features = "nCount_RNA", split.by = "sample")
+    r_feature_plot(b6_f420_combined, features = "Col1a1", split.by = "sample")
+    r_feature_plot(b6_f420_combined, features = "Col1a2", split.by = "sample")
+
+    p1 <- r_dim_plot(b6_f420_combined, group.by = "cell_type", repel = TRUE)
     p2 <- r_dim_plot(b6_f420_combined, group.by = "seurat_clusters")
     p1 | p2
-
-    b6_f420_assignments <- data.frame(cell_type_final = b6_f420_combined$cell_type_final)
-    rownames(b6_f420_assignments) <- names(b6_f420_combined$cell_type_final)
-
-    qs::qsave(b6_f420_assignments, file = "misc/b6_f420_assignments.qs")
 }
 ```
 
@@ -92,7 +137,7 @@ if(file.exists("misc/b6_f420_assignments.qs")) {
 # Remove tumor cells, low quality cells, and erythrocytes
 Idents(b6_f420_combined) <- b6_f420_combined$cell_type_final
 b6_f420_combined <- subset(b6_f420_combined,
-    idents = c("LowQ", "Erythrocyte", "Mesothelial", "F420"),
+    idents = c("Tumor"),
     invert = TRUE)
 
 # Plot and save
@@ -115,7 +160,6 @@ mouse_marks <- c(
     "Foxl1", "Scgb1a1", "Epcam", # Proximal airway
     "Sftpd", "Ager", "Aqp5", # Distal airway
     "Pdgfra", "Ltbp4", "Gsn", # Fibroblast
-    "Mgp", "Myh11", "Acta2", # Smooth muscle
     "Cd19", "Cd79a", "Pax5", # B cell
     "Csf3r", "S100a9", "Mxd1", # Granulocyte
     "Apoc1", "Adipoq", "Retn", # Adipocyte
@@ -126,8 +170,8 @@ b6_f420_combined$cell_type_final <- factor(
     b6_f420_combined$cell_type_final,
     levels = c("Monocyte/Macrophage", "Alveolar macrophage", "Endothelial cell",
         "T/NK cell", "Dendritic cell", "Upper airway cell",
-        "Distal airway cell", "Fibroblast", "Smooth muscle cell", "B cell",
-        "Granulocyte", "Adipocyte", "Pericyte"))
+        "Distal airway cell", "Fibroblast", "B cell",
+        "Granulocyte"))
 
 DotPlot(b6_f420_combined,
     features = mouse_marks,
@@ -141,8 +185,17 @@ DotPlot(b6_f420_combined,
 
 ### Create frequency plots of stromal and immune cells
 ```{r b6_f420_5, dependson='b6_f420_4', eval=TRUE}
-subset(b6_f420_combined,
-    idents = c("Mono", "Mac", "DC", "NK/T", "B", "Granulo", "Alv Mac"))@meta.data %>%
+subset(
+    b6_f420_combined,
+    idents = c(
+        "Monocyte/Macrophage",
+        "Alveolar macrophage",
+        "T/NK cell",
+        "Dendritic cell",
+        "B cell",
+        "Granulocyte"
+    )
+)@meta.data %>%
     ggplot(aes(sample, fill = cell_type_final)) +
         geom_bar(position = "fill") +
         theme_classic()
@@ -151,17 +204,15 @@ ggsave("output/figures/b6_immune.pdf",
     width = 4,
     height = 4)
 
-subset(b6_f420_combined,
+subset(
+    b6_f420_combined,
     idents = c(
-        "Endo",
-        "Peri",
-        "SMC",
-        "Fibroblast",
-        "Lower Airway",
-        "Upper Airway",
-        "Meso",
-        "Adipo")
-    )@meta.data %>%
+        "Endothelial cell",
+        "Upper airway cell",
+        "Distal airway cell",
+        "Fibroblast"
+    )
+)@meta.data %>%
     ggplot(aes(sample, fill = cell_type_final)) +
         geom_bar(position = "fill") +
         theme_classic()

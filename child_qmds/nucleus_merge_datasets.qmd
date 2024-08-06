@@ -1,0 +1,144 @@
+## Consider Integrating
+
+I'm now going to merge and then annotate the dataset.
+
+```{r looking-for-batch-effects}
+merged_samples <- merge(sample_list[[1]], sample_list[-1])
+
+merged_samples <- process_seurat(merged_samples)
+
+DimPlot(merged_samples, group.by = "sample_id")
+```
+
+The data looks fairly well integrated. All clusters contain cells from each sample.
+
+## Annotate Single-Nucleus Data
+
+I'm going to use a snRNA-seq dataset as my reference for cell type annotations. The reference dataset is from "Single-Nucleus RNA-Sequencing Profiling of Mouse Lung. Reduced Dissociation Bias and Improved Rare Cell-Type Detection Compared with Single-Cell RNA Sequencing". The GEO accession number is GSE145998, and the metadata was received upon request from the authors.
+
+```{bash get-sra}
+wget -P input https://ftp.ncbi.nlm.nih.gov/geo/series/GSE145nnn/GSE145998/suppl/GSE145998%5FCtrl%5Fmouse%5FSnuc%5Fcomb.dge.txt.gz
+
+gunzip input/GSE145998_Ctrl_mouse_Snuc_comb.dge.txt.gz
+```
+
+```{r load-in-new-reference}
+sn_mouse_lung <- read.csv("input/GSE145998_Ctrl_mouse_Snuc_comb.dge.txt", sep = ",", header = TRUE) %>%
+    column_to_rownames("X")
+sn_mouse_lung_md <- read.table("input/GSE145998_nuc_meta.txt")
+#meta data doesn't have all the cells that exp matrix has
+sn_mouse_lung <- sn_mouse_lung[,rownames(sn_mouse_lung_md)]
+
+mouse_lung_ref <-
+    SummarizedExperiment(assays = list(logcounts = log(1 + sn_mouse_lung)),
+                         colData = sn_mouse_lung_md)
+```
+
+### Re-Run SingleR
+
+```{r sn-singler}
+#make merged_samples a SummarizedExperiment
+merged_sumexp <- SummarizedExperiment(assays = list(logcounts = log(1 + GetAssayData(merged_samples, slot = "counts"))),
+                                      colData = merged_samples@meta.data)
+
+sn_preds <- SingleR(test = merged_sumexp,
+                    ref = mouse_lung_ref,
+                    labels = mouse_lung_ref$cell_type)
+```
+
+### Add Predictions to Seurat Object
+
+Now I'll add these predictions back to my seurat object and visualize them.
+
+I'm also going to add a column called "coarse_cell_type" that has more general annotations based on the single nuclei cell type predictions.
+
+```{r add-sn-preds}
+merged_samples <- AddMetaData(object = merged_samples,
+                              metadata = sn_preds$labels,
+                              col.name = "sn_cell_type")
+
+DimPlot(merged_samples, group.by = "sn_cell_type", label = TRUE)
+
+# Make coarser labels
+merged_samples@meta.data <-
+    mutate(merged_samples@meta.data,
+           coarse_cell_type = recode(sn_cell_type,
+                                     "AT1" = "Epithelial",
+                                     "AT2" = "Epithelial",
+                                     "Epi" = "Epithelial",
+                                     "aEC" = "Endothelial",
+                                     "CapEC" = "Endothelial",
+                                     "EC1" = "Endothelial",
+                                     "LEC" = "Endothelial",
+                                     "vEC" = "Endothelial",
+                                     "AM" = "Mac",
+                                     "IM" = "Mac",
+                                     "BC" = "B cell",
+                                     "GB" = "B cell",
+                                     "FB1" = "FB",
+                                     "FB2" = "FB",
+                                     "matFB" = "FB",
+                                     "MyoFB" = "FB",
+                                     "TC" = "T cell",
+                                     "TC3" = "T cell",
+                                     "Th17 TC" = "T cell"))
+
+DimPlot(merged_samples, group.by = "coarse_cell_type", label = TRUE)
+```
+
+### Cell Type Counts
+
+```{r cell-type-count-table}
+merged_samples@meta.data %>%
+    select(sample_id, coarse_cell_type) %>%
+    group_by(sample_id, coarse_cell_type) %>%
+    mutate(total = n()) %>%
+    unique() %>%
+    pivot_wider(names_from = "sample_id", values_from = "total") 
+```
+
+What the cell type abbreviations are
+
+- aEC: arterial endothelial cells
+- AM: alveolar macs
+- AT1: alveolar type 1 epithelial cells
+- AT2: alveolar type 2 epithelial cells
+- BC: B cells
+- CapEC: capillary endothelial cells
+- DC: dendritic cells
+- Div: dividing cells
+- EC: endothelial cells
+- Epi: epithelial cells
+- FB: fibroblasts
+- GB: germinal B cells
+- IM: interstitial macs
+- LEC: lymphatic endothelial cells
+- Mes: mesolthelial cells
+- Mono: monocytes
+- MyoFB: myofibroblasts
+- Peri: pericytes
+- SMC: smooth muscle cells
+- TC: T cells
+
+## Identify Cancer Cells
+
+I'm interested in seeing what clusters are cancer cells. To do this I will look at SingleR annotations and expression of cancer marker genes.
+
+```{r cancer-marker-exp}
+cancer_features <- c("Col1a1", "Col1a2", "Satb2", "Psmd4", "Mif", "Runx2")
+
+r_feature_plot(merged_samples, features = cancer_features, coord.fixed = TRUE, ncol = 3)
+DimPlot(merged_samples, label = TRUE)
+```
+
+Based on expression of these marker genes, as well as the cell type labels both with a single-cell reference and a single-nucleus reference, I think seurat cluster 2 is the cancer cells in this dataset.
+
+```{r label-tumor-cells}
+for (i in seq_len(nrow(merged_samples@meta.data))) {
+    if (merged_samples$seurat_clusters[i] == 2) {
+        merged_samples$sn_cell_type[i] <- "tumor"
+        merged_samples$coarse_cell_type[i] <- "tumor"
+    }
+}
+qs::qsave(merged_samples, "output/rdata/nucleus/merged_samples.qs")
+```

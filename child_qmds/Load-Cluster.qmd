@@ -10,6 +10,26 @@ mouse_immune <-
     mouse_immune[mouse_immune$label.main != "Stromal cells", ]
 
 mouse_rna <- celldex::MouseRNAseqData()
+
+f420_culture <-
+    tenx_load_qc("/home/gdrobertslab/lab/Counts/S0200/filtered_feature_bc_matrix",
+                 min_cells = 3,
+                 min_features = 200,
+                 violin_plot = FALSE
+    ) %>%
+    subset(nCount_RNA > 5000 & nCount_RNA < 60000) %>%
+    process_seurat()
+f420_culture$cell_type <- "F420"
+
+k7m2_culture <-
+    tenx_load_qc("/home/gdrobertslab/lab/Counts/S0201/filtered_feature_bc_matrix",
+                 min_cells = 3,
+                 min_features = 200,
+                 violin_plot = FALSE
+    ) %>%
+    subset(nCount_RNA > 5000 & nCount_RNA < 60000) %>%
+    process_seurat()
+k7m2_culture$cell_type <- "K7M2"
 ```
 
 # Load raw data and suggest cell type
