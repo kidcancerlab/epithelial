@@ -84,9 +84,62 @@ weighted_networks_lr <-
 
 ## Calculate DE between primary and met F420 to get DE list to use for nichenetr
 ```{r f420_de}
-tibia_f420 <- qs::qread("output/rdata/sobj_list.qs")$tibia_F420
+sobj_list <- qs::qread("output/rdata/sobj_list.qs")
 
+b6_f420_combined_t <-
+    merge(
+        sobj_list[["C57BL6"]],
+        y = sobj_list[["F420"]],
+        add.cell.ids = c("C57BL6", "F420")
+    ) %>%
+    AddMetaData(qs::qread("misc/b6_f420_assignments.qs")) %>%
+    merge(sobj_list$tibia_F420) %>%
+    process_seurat()
 
+Idents(b6_f420_combined_t) <- "cell_type_final"
+
+plot_name <-
+    DimPlot(
+        b6_f420_combined_t,
+        group.by = "cell_type_final",
+        label = TRUE,
+        repel = TRUE
+    )
+ggsave("stuff_f420_cell_final.png", plot_name, width = 15, height = 10)
+
+plot_name <-
+    DimPlot(
+        b6_f420_combined_t,
+        group.by = "cell_type",
+        label = TRUE,
+        repel = TRUE
+    ) +
+    NoLegend()
+ggsave("stuff_f420_cell_type_no_legend.png", plot_name, width = 15, height = 10)
+
+plot_name <-
+    DimPlot(
+        b6_f420_combined_t,
+        split.by = "sample_name",
+        cells.highlight = WhichCells(b6_f420_combined_t, idents = "F420")
+    )
+
+ggsave("stuff_f420_cells_split.png", plot_name, width = 15, height = 10)
+
+DimPlot(
+    b6_f420_combined_t,
+    group.by = "cell_type",
+    label = TRUE,
+    repel = TRUE
+) +
+    NoLegend()
+
+Idents(b6_f420_combined_t) <- "cell_type"
+DimPlot(
+    b6_f420_combined_t,
+    cells.highlight = WhichCells(b6_f420_combined_t, idents = "F420"),
+    split.by = "sample_name"
+)
 ```
 
 ```{r nichenetr}
@@ -353,6 +406,8 @@ gene_lists <-
         Pdgfa_downstream = gene_lists$Pdgfa[[1]],
         Pdgfb_downstream = gene_lists$Pdgfb[[1]]
     )
+
+qs::qsave(gene_lists, "output/rdata/nichenetr_gene_lists.qs")
 
 mouse_data <-
     AddModuleScore(
