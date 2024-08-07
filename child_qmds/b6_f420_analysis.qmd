@@ -161,9 +161,7 @@ mouse_marks <- c(
     "Sftpd", "Ager", "Aqp5", # Distal airway
     "Pdgfra", "Ltbp4", "Gsn", # Fibroblast
     "Cd19", "Cd79a", "Pax5", # B cell
-    "Csf3r", "S100a9", "Mxd1", # Granulocyte
-    "Apoc1", "Adipoq", "Retn", # Adipocyte
-    "Postn", "Pde5a", "Pdzd2" # Pericyte
+    "Csf3r", "S100a9", "Mxd1" # Granulocyte
 )
 
 b6_f420_combined$cell_type_final <- factor(

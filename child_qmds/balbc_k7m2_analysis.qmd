@@ -1,98 +1,190 @@
-
 ## BALBC and K7M2
 ```{r balbc_k7m2, dependson='load_raw', eval=TRUE}
 sobj_list <- qs::qread("output/rdata/sobj_list.qs")
 
 # Merge normal and tumor bearing lung for F420 and process into same UMAP space
-balb_k7m2_combined <- merge(sobj_list[["BALBC"]],
+balb_k7m2_combined <-
+    merge(
+        sobj_list[["BALBC"]],
         y = sobj_list[["K7M2"]],
-        add.cell.ids = c("BALBC", "K7M2")) %>%
-    SCTransform() %>%
-    RunPCA(npcs = 30) %>%
-    RunUMAP(dims = 1:30, seed.use = 111) %>%
-    FindNeighbors(k.param = 30, reduction = "umap", dims = 1:2) %>%
-    FindClusters(resolution  = 0.3)
+        add.cell.ids = c("BALBC", "K7M2")
+    ) %>%
+    SCTransform(verbose = FALSE) %>%
+    RunPCA(npcs = 30, verbose = FALSE) %>%
+    RunUMAP(dims = 1:30, verbose = FALSE) %>%
+    FindNeighbors(k.param = 30, verbose = FALSE) %>%
+    FindClusters(resolution  = 0.3, verbose = FALSE)
+```
 
-# Check identities from SingleR calls and other meta
-DimPlot(balb_k7m2_combined, group.by = "seurat_clusters", split.by = "sample", label = TRUE) +
-    coord_fixed() +
-    theme(legend.position = "none")
-DimPlot(balb_k7m2_combined, group.by = "cell_type", split.by = "sample", label = TRUE) +
-    coord_fixed() +
-    theme(legend.position = "none")
-r_feature_plot(balb_k7m2_combined, features = "cell_score", split.by = "sample") +
-    coord_fixed()
-r_feature_plot(balb_k7m2_combined, features = "nCount_RNA", split.by = "sample") +
-    coord_fixed()
-r_feature_plot(balb_k7m2_combined, features = "Col1a1", split.by = "sample") +
-    coord_fixed()
-r_feature_plot(balb_k7m2_combined, features = "Col1a2", split.by = "sample") +
-    coord_fixed()
-
-# Rename clusters based on the calls
-if(file.exists("misc/balb_k7m2_assignments.qs")) {
+### Assign cell types to the combined object
+```{r balbc_k7m2_2, dependson='balbc_k7m2', eval=TRUE}
+if (file.exists("misc/balb_k7m2_assignments.qs")) {
     balb_k7m2_combined <- AddMetaData(balb_k7m2_combined,
         qs::qread("misc/balb_k7m2_assignments.qs"))
 } else {
-    # This list is manually curated from the SingleR assignments and scores
-    # If run again, this needs to be checked for accuracy, as clusters may change
-    balb_k7m2_combined <- RenameIdents(balb_k7m2_combined,
-        `0` = "Monocyte/Macrophage",
-        `1` = "Alveolar macrophage",
-        `2` = "Alveolar macrophage",
-        `3` = "Endothelial cell",
-        `4` = "Monocyte/Macrophage",
-        `5` = "B cell",
-        `6` = "Dendritic cell",
-        `7` = "Distal airway cell",
-        `8` = "T/NK cell",
-        `9` = "T/NK cell",
-        `10` = "K7M2",
-        `11` = "T/NK cell",
-        `12` = "Monocyte/Macrophage",
-        `13` = "K7M2",
-        `14` = "Granulocyte",
-        `15` = "Endothelial cell",
-        `16` = "Endothelial cell",
-        `17` = "T/NK cell",
-        `18` = "Granulocyte",
-        `19` = "Monocyte/Macrophage",
-        `20` = "Fibroblast",
-        `21` = "Smooth muscle cell",
-        `22` = "Upper airway cell",
-        `23` = "Alveolar macrophage",
-        `24` = "Endothelial cell",
-        `25` = "Adipocyte",
-        `26` = "Alveolar macrophage",
-        `27` = "Alveolar macrophage",
-        `28` = "LowQ",
-        `29` = "Dendritic cell",
-        `30` = "LowQ",
-        `31` = "LowQ",
-        `32` = "Pericyte")
+    balb_k7m2_combined@meta.data <-
+        balb_k7m2_combined@meta.data %>%
+        rownames_to_column("cell_id") %>%
+        left_join(
+            read_tsv("misc/coarse_types.tsv", show_col_types = FALSE),
+            by = "cell_type"
+        ) %>%
+        column_to_rownames("cell_id")
 
-    balb_k7m2_combined$cell_type_final <- Idents(balb_k7m2_combined)
+    sil_scoring <-
+        optimize_silhouette(
+            balb_k7m2_combined,
+            test_res = seq(0.1, 1, by = 0.05),
+            summary_plot = FALSE
+        ) %>%
+        arrange(desc(sil_vals))
 
-    balb_k7m2_assignments <- data.frame(cell_type_final = balb_k7m2_combined$cell_type_final)
-    rownames(balb_k7m2_assignments) <- names(balb_k7m2_combined$cell_type_final)
+    balb_k7m2_combined <-
+        FindClusters(
+            balb_k7m2_combined,
+            resolution = sil_scoring$res_vals[1]
+        )
 
-    qs::qsave(balb_k7m2_assignments, file = "misc/balb_k7m2_assignments.qs")
+    tentative_assignments <-
+        balb_k7m2_combined@meta.data %>%
+        select(cell_type_coarse, seurat_clusters) %>%
+        group_by(seurat_clusters, cell_type_coarse) %>%
+        dplyr::summarize(n = n(), .groups = "drop") %>%
+        group_by(seurat_clusters) %>%
+        arrange(desc(n)) %>%
+        select(-n) %>%
+        dplyr::rename(tentative = "cell_type_coarse") %>%
+        slice_head(n = 1)
+
+    balb_k7m2_combined@meta.data <-
+        balb_k7m2_combined@meta.data %>%
+        rownames_to_column("cell_id") %>%
+        left_join(tentative_assignments, by = "seurat_clusters") %>%
+        column_to_rownames("cell_id")
+
+    # Check identities from SingleR calls and other meta
+    table(
+        balb_k7m2_combined$cell_type_coarse,
+        balb_k7m2_combined$seurat_clusters
+    ) %>%
+        pheatmap::pheatmap(
+            scale = "column",
+            display_numbers = TRUE,
+            cluster_cols = FALSE,
+            filename = "output/figures/balb_k7m2_cluster_assignments_heatmap.png",
+            width = 12,
+            height = 6
+        )
+    # unclear clusters: 17 - this cluster has all the cells labeled as "tumor"
+    # the healthy lung, 14 - is tumor plus a bunch of random stuff scattered all
+    # over the place
+
+    DimPlot(
+        balb_k7m2_combined,
+        cells.highlight = WhichCells(balb_k7m2_combined, idents = 6)
+    )
+
+    clusters_remove <- c(14, 17)
+
+    balb_k7m2_combined <-
+        subset(
+            balb_k7m2_combined,
+            idents = clusters_remove,
+            invert = TRUE
+        ) %>%
+        SCTransform(verbose = FALSE) %>%
+        RunPCA(npcs = 30, verbose = FALSE) %>%
+        RunUMAP(dims = 1:30, verbose = FALSE) %>%
+        FindNeighbors(k.param = 30, verbose = FALSE) %>%
+        FindClusters(verbose = FALSE)
+
+    balb_k7m2_combined$cell_type_final <- balb_k7m2_combined$tentative
+
+    DimPlot(
+        balb_k7m2_combined,
+        group.by = c("seurat_clusters", "cell_type_final"),
+        split.by = "sample",
+        label = TRUE,
+        repel = TRUE
+    ) +
+        NoLegend()
+
+    qs::qsave(
+        balb_k7m2_combined,
+        file = "output/rdata/balb_k7m2_combined_all.qs"
+    )
+
+    qs::qsave(
+        balb_k7m2_combined[["cell_type_final"]],
+        file = "misc/balb_k7m2_assignments.qs"
+    )
+
+    DimPlot(
+        balb_k7m2_combined,
+        group.by = "seurat_clusters",
+        split.by = "sample",
+        label = TRUE
+    ) +
+        coord_fixed() +
+        theme(legend.position = "none")
+    DimPlot(
+        balb_k7m2_combined,
+        group.by = "cell_type",
+        split.by = "sample",
+        label = TRUE
+    ) +
+        coord_fixed() +
+        theme(legend.position = "none")
+    r_feature_plot(
+        balb_k7m2_combined,
+        features = "cell_score",
+        split.by = "sample"
+    ) +
+        coord_fixed()
+    r_feature_plot(
+        balb_k7m2_combined,
+        features = "nCount_RNA",
+        split.by = "sample"
+    ) +
+        coord_fixed()
+    r_feature_plot(
+        balb_k7m2_combined,
+        features = "Col1a1",
+        split.by = "sample"
+    ) +
+        coord_fixed()
+    r_feature_plot(
+        balb_k7m2_combined,
+        features = "Col1a2",
+        split.by = "sample"
+    ) +
+        coord_fixed()
+
+    p1 <- r_dim_plot(balb_k7m2_combined, group.by = "cell_type_final")
+    p2 <- r_dim_plot(balb_k7m2_combined, group.by = "seurat_clusters")
+    p1 | p2
 }
+```
 
-p1 <- r_dim_plot(balb_k7m2_combined, group.by = "cell_type_final")
-p2 <- r_dim_plot(balb_k7m2_combined, group.by = "seurat_clusters")
-p1 | p2
 
+### Create publication plots and save
+```{r balbc_k7m2_3, dependson='balbc_k7m2_2', eval=TRUE}
 # Remove tumor cells, low quality cells, and erythrocytes
 Idents(balb_k7m2_combined) <- balb_k7m2_combined$cell_type_final
-balb_k7m2_combined <- subset(balb_k7m2_combined,
-    idents = c("LowQ", "K7M2"),
-    invert = TRUE)
+balb_k7m2_combined <-
+    subset(
+        balb_k7m2_combined,
+        idents = c("Tumor"),
+        invert = TRUE
+    )
 
 # Plot and save
-r_dim_plot(balb_k7m2_combined, "K7M2 Stroma",
+r_dim_plot(
+    balb_k7m2_combined,
+    "K7M2 Stroma",
     group.by = "cell_type_final",
-    split.by = "sample")
+    split.by = "sample"
+)
 
 ggsave("output/figures/combined_balb_k7m2.pdf",
     width = 8,
@@ -109,19 +201,15 @@ mouse_marks <- c(
     "Foxl1", "Scgb1a1", "Epcam", # Proximal airway
     "Sftpd", "Ager", "Aqp5", # Distal airway
     "Pdgfra", "Ltbp4", "Gsn", # Fibroblast
-    "Mgp", "Myh11", "Acta2", # Smooth muscle
     "Cd19", "Cd79a", "Pax5", # B cell
-    "Csf3r", "S100a9", "Mxd1", # Granulocyte
-    "Apoc1", "Adipoq", "Retn", # Adipocyte
-    "Postn", "Pde5a", "Pdzd2" # Pericyte
+    "Csf3r", "S100a9", "Mxd1" # Granulocyte
 )
 
 balb_k7m2_combined$cell_type_final <- factor(
     balb_k7m2_combined$cell_type_final,
     levels = c("Monocyte/Macrophage", "Alveolar macrophage", "Endothelial cell",
         "T/NK cell", "Dendritic cell", "Upper airway cell",
-        "Distal airway cell", "Fibroblast", "Smooth muscle cell", "B cell",
-        "Granulocyte", "Adipocyte", "Pericyte"))
+        "Distal airway cell", "Fibroblast", "B cell", "Granulocyte"))
 
 DotPlot(balb_k7m2_combined,
     features = mouse_marks,
@@ -154,9 +242,7 @@ subset(balb_k7m2_combined,
         "Endothelial cell",
         "Upper airway cell",
         "Distal airway cell",
-        "Fibroblast",
-        "Adipocyte",
-        "Pericyte"))@meta.data %>%
+        "Fibroblast"))@meta.data %>%
     ggplot(aes(sample, fill = cell_type_final)) +
         geom_bar(position = "fill") +
         theme_classic()
