@@ -1,13 +1,17 @@
 # Make a Seurat object of all the data (not corrected for model)
 ```{r merge_all, dependson='load_raw', eval=TRUE}
-sobj_list <- qs::qread("output/rdata/sobj_list.qs")
-all_sobj <-
-    merge(sobj_list[[1]],
-        sobj_list[2:length(sobj_list)],
-        add.cell.ids = names(sobj_list)) %>%
-    JoinLayers() %>%
-    process_seurat()
-qs::qsave(all_sobj, file = "output/rdata/all_sobj.qs")
+if(!file.exists("output/rdata/all_sobj.qs")) {
+    sobj_list <- qs::qread("output/rdata/sobj_list.qs")
+    all_sobj <-
+        merge(sobj_list[[1]],
+            sobj_list[2:length(sobj_list)],
+            add.cell.ids = names(sobj_list)) %>%
+            JoinLayers() %>%
+        process_seurat()
+    qs::qsave(all_sobj, file = "output/rdata/all_sobj.qs")
+} else {
+    all_sobj <- qs::qread("output/rdata/all_sobj.qs")
+}
 
 all_dim <-
     r_dim_plot(all_sobj,
@@ -50,6 +54,7 @@ p1 + p2 + p3
 
 qs::qsave(all_sobj, "output/rdata/all_sobj_integrated.qs")
 ```
+
 
 # Grab just macrophages and sub cluster them
 ```{r immune, dependson='merge_all', eval=TRUE}
@@ -110,7 +115,7 @@ if(!file.exists("output/rdata/macs_subclustered_cleaned.qs")) {
 
     gt::gt(deg_macs_1 %>%
         group_by(cluster) %>%
-        filter(pct.1 >0.2) %>%
+        filter(pct.1 > 0.2) %>%
         slice_max(avg_log2FC, n = 20) %>%
         arrange(cluster, -avg_log2FC)) %>%
         gt::tab_header(
@@ -144,20 +149,7 @@ if(!file.exists("output/rdata/macs_subclustered_cleaned.qs")) {
         FindNeighbors(reduction = "harmony", dims = 1:30) %>%
         FindClusters(resolution = seq(0.1, 0.8, 0.1))
 
-    plots <- parallel::mclapply(
-        c(0.01, 0.1, 0.3, 1, 3),
-        function(i) {
-            RunUMAP(macs,
-                reduction = "harmony",
-                dims = 1:30,
-                min.dist = i,
-                spread = 5,
-                ) %>%
-            r_dim_plot()
-    }, mc.cores = parallelly::availableCores())
-    wrap_plots(plots, ncol = 3)
-
-    # A resolution of 0.5 looks pretty good
+    # A resolution of 0.8 looks pretty good
     Idents(macs) <- macs$RNA_snn_res.0.8
     r_dim_plot(macs, split.by = "tissue")
 
