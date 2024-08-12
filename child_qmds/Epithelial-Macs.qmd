@@ -118,7 +118,7 @@ if(!file.exists("misc/murine_macs_assignments.qs")) {
         r_dim_plot(macs, split.by = "tissue")
         macs <- run_fdl(macs)
         r_dim_plot(macs, split.by = "tissue", reduction = "fdl")
-
+DimPlot()
         deg_macs_1 <- FindAllMarkers(macs)
 
         gt::gt(deg_macs_1 %>%
@@ -305,22 +305,22 @@ if(!file.exists("misc/murine_macs_assignments.qs")) {
         `13` = "cMonocyte",
         `14` = "Cycling",
         `15` = "Interstitial",
-        `16` = "LA-TAM",
-        `17` = "DC1",
-        `18` = "Inflam-TAM",
+        `16` = "Osteoclasts",
+        `17` = "Cycling",
+        `18` = "scarMac",
         `19` = "cMonocyte")
 
     macs$macs_assignment <- Idents(macs) %>%
-        factor(levels = c("cMonocyte", "ncMonocyte", "TAM", "Interstitial",
-            "scarMac", "IFN-TAM", "angio-TAM", "LA-TAM", "Inflam-TAM", 
-            "Cycling", "Pre-DC", "DC1", "DC2"))
+        factor(levels = c("scarMac", "IFN-TAM",  "TAM", "Cycling", "cMonocyte",
+        "ncMonocyte", "Interstitial", "Osteoclast", "Pre-DC", "DC1"))
 
     qs::qsave(macs$macs_assignment, "misc/murine_macs_assignments.qs")
 } else {
     macs_assignment <- qs::qread("misc/murine_macs_assignments.qs")
     macs <- subset(macs, cells = names(macs_assignment))
-    macs <- subset(macs, subset = !is.na(macs$tissue))
-    macs$macs_assignment <- macs_assignment
+    macs$macs_assignment <- macs_assignment %>%
+        factor(levels = c("scarMac", "IFN-TAM",  "TAM", "Cycling", "cMonocyte",
+        "ncMonocyte", "Interstitial", "Osteoclast", "Pre-DC", "DC1"))
 
     macs <- macs %>%
         FindVariableFeatures() %>%
@@ -346,20 +346,18 @@ r_dim_plot(macs, split.by = "tissue")
 ```
 
 ```{r mac_plots, dependson='macs', eval=TRUE}
+# Refine the markers for the macrophage cell types
 mac_genes <- c(
-    "S100a8", "Sell", "Ifitm6",  # cMonocyte
-    "Itgal", "Ace", "Spn",  # ncMonocyte
-    "C1qa",  # TAMs, Osteoclast-like?, https://doi.org/10.1186/s41232-022-00213-x
-    "Lyve1", "Mrc1",  # Tissue resident/interstitial
-    "Trem2", "Cd9", "Gpnmb", "Spp1",  # Scar-associated, see https://doi.org/10.1038/s41586-019-1631-3
+    "Trem2", "Cd9", "Gpnmb", "Spp1", "Fn1", # Scar-associated, see https://doi.org/10.1038/s41586-019-1631-3
     "Ifit1", "Ifit2", "Cxcl10", # IFN-TAMs
-    "Il1a", "Fn1", "Arg1",  # Angio-TAMs
-    "Acp5", "Ctsk", # LA-TAMs
-    "Fos", "Jun", "Atf3", # Inflammatory TAMs
+     # TAMs are bland when compared to the rest of these populations
     "Top2a", "Hist1h1b", "Birc5",  # Cycling
+    "Ly6c2", "Sell", "Ifitm6",  # cMonocyte
+    "Itgal", "Ace", "Spn",  # ncMonocyte
+    "Lyve1", "Mrc1", "Cd163",  # Tissue resident/interstitial
+    "Nfatc1", "Mmp9", "Slc9b2", # Osteoclast-TAMs
     "Cd209a", "Ccr7", "Dcstamp", # Pre-DC
-    "H2-Ab1", "Clec9a", "Irf8",  # DC1
-    "Fscn1", "Ccl5") # DC2
+    "Xcr1", "Clec9a", "Irf8")  # DC1
 
 Idents(macs) <- macs$macs_assignment
 
@@ -372,10 +370,10 @@ DotPlot(macs,
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
     coord_fixed()
 
-r_dim_plot(macs, group.by = "macs_assignment", split.by = "tissue")
+r_dim_plot(macs, split.by = "tissue")
 
 cluster_counts <-
-    table(macs$obj_name, macs$seurat_clusters) %>%
+    table(macs$obj_name, macs$macs_assignment) %>%
     as.data.frame() %>%
     dplyr::rename("Sample" = "Var1",
                   "Cluster" = "Var2",
@@ -388,6 +386,8 @@ cluster_counts <-
 
 cluster_counts
 
+# Save the final object
+qs::qsave(macs, "output/rdata/final_murine_macs.qs")
 ```
 
 
