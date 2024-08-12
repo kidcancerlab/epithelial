@@ -10,14 +10,16 @@ all_sobj <-
 qs::qsave(all_sobj, file = "output/rdata/all_sobj.qs")
 
 all_dim <-
-    r_dim_plot(all_sobj,
+    r_dim_plot(
+        all_sobj,
         group.by = c("obj_name", "cell_type"),
         label = TRUE,
         repel = TRUE,
-        shuffle = TRUE) +
+        shuffle = TRUE
+    ) +
     NoLegend()
 
-ggsave("output/figures/all_dim.pdf",
+ggsave("output/figures/all_dim_pre_harmony.pdf",
        width = 25,
        height = 8)
 
@@ -48,8 +50,21 @@ p3 <- r_dim_plot(all_sobj,
     group.by = "seurat_clusters")
 p1 + p2 + p3
 
+ggsave("output/figures/all_dim_post_harmony.pdf",
+       width = 25,
+       height = 8)
+
 qs::qsave(all_sobj, "output/rdata/all_sobj_integrated.qs")
 ```
+
+# Set aside the DC's so we can more clearly cluster the macrophages
+Will pull these back in later since Dendritic cells cluster cleanly and separately from macrophages
+```{r dc, dependson='immune', eval=TRUE}
+Idents(all_sobj) <- "cell_type"
+dc_cells <- subset(all_sobj, idents = c("DC1", "DC2"))
+qs::qsave(rownames(dc_cells), "output/rdata/murine_dcs.qs")
+```
+
 
 # Grab just macrophages and sub cluster them
 ```{r immune, dependson='merge_all', eval=TRUE}
@@ -60,9 +75,7 @@ if (!file.exists("misc/murine_macs.qs")) {
             "Mono",
             "Int Mf",
             "Macrophages",
-            "Macrophages activated",
-            "DC1",
-            "DC2"
+            "Macrophages activated"
         )) %>%
         rownames()
     qs::qsave(mac_ids, "misc/murine_macs.qs")
@@ -70,25 +83,70 @@ if (!file.exists("misc/murine_macs.qs")) {
     mac_ids <- qs::qread("misc/murine_macs.qs")
 }
 
-macs <- subset(all_sobj, cells = mac_ids) %>%
+set.seed(1337)
+batch_corrected <-
+    batchelor::fastMNN(
+        GetAssayData(macs),
+        batch = macs$model
+    ) %>%
+    assay() %>%
+    as.matrix()
+
+macs <-
+    SetAssayData(
+        object = macs,
+        layer = "data",
+        new.data = batch_corrected
+    ) %>%
     FindVariableFeatures() %>%
     ScaleData() %>%
     RunPCA() %>%
-    harmony::RunHarmony(group.by.vars = "model", dims.use = 1:30) %>%
-    RunUMAP(reduction = "harmony", dims = 1:30) %>%
-    FindNeighbors(reduction = "harmony", dims = 1:30) %>%
+    RunUMAP(dims = 1:30) %>%
+    FindNeighbors(dims = 1:30) %>%
     FindClusters(resolution = seq(0.1, 0.8, 0.1))
+
+# macs <- subset(all_sobj, cells = mac_ids) %>%
+#     FindVariableFeatures() %>%
+#     ScaleData() %>%
+#     RunPCA() %>%
+#     harmony::RunHarmony(
+#         group.by.vars = "model",
+#         dims.use = 1:30,
+#         theta = 4,
+#         lambda = 2 # Harmony seems to be overcorrecting a bit
+#     ) %>%
+#     RunUMAP(reduction = "harmony", dims = 1:30) %>%
+#     FindNeighbors(reduction = "harmony", dims = 1:30) %>%
+#     FindClusters(resolution = seq(0.1, 0.8, 0.1))
+
+plot_name <-
+    DimPlot(
+        macs,
+        group.by = paste0("RNA_snn_res.", seq(0.1, 0.8, 0.1)),
+        label = TRUE,
+        repel = TRUE,
+        ncol = 2
+    )
+
+ggsave("output/figures/mac_sussing/macs_dim_multiple_res.png",
+       plot = plot_name,
+       width = 12,
+       height = 25)
 
 # clustree::clustree(macs)
 
-# A resolution of 0.3 looks pretty good
-macs$seurat_clusters <- macs$RNA_snn_res.0.3
+# A resolution of 0.2 looks pretty good
+macs$seurat_clusters <- macs$RNA_snn_res.0.2
 Idents(macs) <- macs$seurat_clusters
 
-p1 <- r_dim_plot(macs, group.by = "seurat_clusters")
-p2 <- r_dim_plot(macs, group.by = "cell_type")
-p3 <- r_dim_plot(macs, group.by = "sample")
+p1 <- r_dim_plot(macs, group.by = "seurat_clusters", shuffle = TRUE)
+p2 <- r_dim_plot(macs, group.by = "cell_type", shuffle = TRUE, repel = TRUE)
+p3 <- r_dim_plot(macs, group.by = "sample", shuffle = TRUE, repel = TRUE)
 p1 + p2 + p3
+
+ggsave("output/figures/mac_sussing/macs_dim.pdf",
+       width = 25,
+       height = 8)
 
 # Establish groups by tissue type
 macs$tissue <- "unassigned"
@@ -96,25 +154,254 @@ macs$tissue[macs$sample %in% c("tibia_F420", "tibia_K7M2")] <- "Tibia Tumor"
 macs$tissue[macs$sample %in% c("F420", "K7M2")] <- "Lung Metastasis"
 macs$tissue[macs$sample %in% c("C57BL6", "BALBC")] <- "Healthy Lung"
 
+plot_name <-
+    r_dim_plot(
+        macs,
+        split.by = "tissue"
+    )
+ggsave(
+    "output/figures/mac_sussing/macs_dim_tissue.png",
+    plot = plot_name,
+    width = 25,
+    height = 8)
+
+table(macs$seurat_clusters, macs$tissue) %>%
+    prop.table(margin = 2) %>%
+    pheatmap::pheatmap(
+        scale = "row",
+        file = "output/figures/mac_sussing/heatmap_tissue_by_clusters.png"
+    )
+
 qs::qsave(macs, "output/rdata/macs_subclustered.qs")
 ```
 
-# Plot the macrophages
+
+# Key plots
+Cell_type dimplot
+ryan types - X
+cell cycle - X
+AUC labels - X
+Macrophage markers - X
+
+### Key observations
+Split by tissue
+    Cluster 8 mostly unique to tibia
+    Clusters 0, 2, and 5 shared between lung and tibia but not in healthy lung
+    Clusters 4, 6 mostly unique to tumor lung
+    Clusters 1, 9 and 11 are proportionally higher in healthy lung
+
+Cell cycle
+    Cluster 5 is in G2M <- cycling - aligns with Ryan's labels
+    Cluster 8 is in G1
+
+Cell_type from SingleR
+    Cluster 8 cell_type is "Macrophages activated"
+    Clusters 1, 2, 6 and 11 are monocytes
+    Pretty much everything else is "Int Mf"
+
+Ryan's labels still seem to cluster well
+    Cluster 0 = scarMacs and ocMacs
+    Cluster 1 = ncMonocytes and ocMacs
+    Cluster 2 = cMonocytes
+    Cluster 3 = ocMacs
+    Cluster 4 = Pre-DC
+    Cluster 5 = Cycling
+    Cluster 6 = angioMacs
+    Cluster 7 -- not present
+    Cluster 8 -- not present
+    Cluster 9 = interstitial
+    Cluster 10 -- not present
+    Cluster 11 -- not present
+    Cluster 12 -- not present
+    Cluster 13 -- not present
+
+    A few clusters (12, 13, 7) have few annotations from Ryan - Not macs?
+    Cluster 3 clusters with macs, but has few Ryan labels
+
+Clusters 3, 12, and 13 have low cell scores < 0.4
+    Cluster 3 - tumor specific macrophage type?
+
+AUC scores
+    Clusters 0, 3, 4, 7, 8, 9, 10, 12 - LA TAMs
+    Cluster 2 - Ifn TAMs
+    Cluster 5 - Proliferative TAMs
+    Clusers 6 and 13 - regulatory TAMs
+    Cluster 8 matches activated macrophages with both AUC and SingleR
+    Cluster 11 - inflammatory TAMs
+    Clusters 12 and 13 also have low AUC scores < 0.25
+
+DE analysis
+    Cluster 2 seems to have Ifn responsive genes (Ifi204, etc.)
+    Cluster 3 has some SMC markers (Acta2, Myh11) - wound healing macs?
+        Small portion of cells expresses Il4
+    Cluster 6 seems high in Il6 (inflammatory) - very high Prg4 - synovial fluid marker???
+    Cluster 7 - tumor maybe?
+        Ryr1 - muscle marker? - No other SMC markers
+        Wfdc2 expressed in pulmonary epithelial cells, also several surfactant proteins - no real epithelial markers though
+        Mgp is chondrocyte
+        Doesn't express Runx2 or Col1a1
+    Cluster 8 has Sdhc (succinate dehydrogenase) upregulated - metabolic?
+    Cluster 10 has some SMC marker genes? - Acta2, Myh11, Mylk - wound healing macs?
+    Cluster 12 has Hbb-bt, Hbb-bs, Hba-a1, Hba-a2 - hemoglobin - RBC
+
+Couple general macrophage markers
+    Weren't super clear
+    Cluster 13 seems overall low, though several other clusters have low expression of macrophage markers
+    Clusters 8 and 9 have really high mac markers
+
+Ryan's macrophage markers
+    Cluster 0 - maybe mixed angioMacs?
+    Cluster 1 - nonclassical TIMs
+    Cluster 2 - classical TIMs, inflam TAMs?
+    Cluster 3 -   Nothing???
+    Cluster 4 - Pre-DC
+    Cluster 5 - cycling macs
+    Cluster 6 - angioMacs
+    Cluster 7 - scarMacs? maybe alv macs?
+    Cluster 8 - osteoclast like
+    Cluster 9 - osteoclast like/ tissue resident
+    Cluster 10 - osteoclast like
+    Cluster 11 - nonclassical TIMs, maybe alv macs?
+    Cluster 12 - X
+    Cluster 13 - X
+
+To kick out:
+    cluster 12 - RBCs
+    cluster 13 - low cell score, low mac markers, only a few cells
+
+
+Conclusions
+    Cluster 0 - TAMs? scar macs???
+    Cluster 1 - normal ncMonocytes?
+    Cluster 2 - tumor associated cMonocytes
+    Cluster 3 -
+    Cluster 4 - lung tumor - scar macs???
+    Cluster 5 - tumor associated cycling macs
+    Cluster 6 - lung tumor - (angioMacs) - highest Fn1
+    Cluster 7 - scarMacs
+    Cluster 8 - tibia only resting activated macrophages
+    Cluster 9 - normal macs?
+    Cluster 10 - scar macs???
+    Cluster 11 - normal macs?
+    Cluster 12 - X
+    Cluster 13 - X
+
+
+## Delete this later
+```{r addRyanLabelsForSussing}
+macs <-
+    qs::qread("misc/murine_macs_assignments_old.qs") %>%
+    as.data.frame() %>%
+    dplyr::rename(ryan_type = ".") %>%
+    AddMetaData(macs, .)
+
+plot_name <-
+    r_dim_plot(
+        macs,
+        group.by = c("seurat_clusters", "ryan_type"),
+        label = TRUE,
+        repel = TRUE,
+        order = TRUE
+    ) +
+    NoLegend()
+
+ggsave("output/figures/mac_sussing/macs_dim_ryan_type.png",
+       width = 25,
+       height = 8)
+
+
+table(macs$seurat_clusters, macs$ryan_type) %>%
+    pheatmap::pheatmap(
+        file = "output/figures/mac_sussing/heatmap_ryan_type.png",
+        display_numbers = TRUE
+    )
+```
+
+# Identify the phenotype of macrophage clusters
 ```{r macs, dependson='immune', eval=TRUE}
-if(!file.exists("output/rdata/macs_subclustered_cleaned.qs")) {
+if (!file.exists("output/rdata/macs_subclustered_cleaned.qs")) {
     r_dim_plot(macs, split.by = "tissue")
     macs <- run_fdl(macs)
     r_dim_plot(macs, split.by = "tissue", reduction = "fdl")
 
+    plot_name <-
+        r_dim_plot(
+            macs,
+            group.by = "cell_type",
+            label = TRUE,
+            repel = TRUE
+        ) +
+            theme(legend.position = "right")
+    ggsave("output/figures/mac_sussing/mac_dim_cell_type.png",
+           plot = plot_name,
+           width = 10,
+           height = 8)
+
+    macs <- kill_cc(macs)
+    Idents(macs) <- "seurat_clusters"
+
+    plot_name <-
+        DimPlot(
+            macs,
+            group.by = c("seurat_clusters", "Phase"),
+            label = TRUE,
+            repel = TRUE,
+            shuffle = TRUE
+        )
+    ggsave("output/figures/mac_sussing/mac_dim_phase.png",
+           plot = plot_name,
+           width = 25,
+           height = 8)
+
+    plot_name <-
+        VlnPlot(
+            macs,
+            features = c("Cd68", "Csf1r", "Adgre1", "Mrc1"),
+            ncol = 2
+        )
+    ggsave("output/figures/mac_sussing/mac_vln_markers.png",
+           plot = plot_name,
+           width = 10,
+           height = 8)
+
+    table(macs$seurat_clusters, macs$cell_type) %>%
+        pheatmap::pheatmap(
+            scale = "row",
+            file = "output/figures/mac_sussing/heatmap_cell_type.png"
+        )
+
     deg_macs_1 <- FindAllMarkers(macs)
 
-    gt::gt(deg_macs_1 %>%
+    deg_macs_1 %>%
         group_by(cluster) %>%
-        filter(pct.1 >0.2) %>%
+        filter(pct.1 > 0.2 & (pct.1 - pct.2 > 0.5)) %>%
+        slice_max(avg_log2FC, n = 5) %>%
+        arrange(cluster, -avg_log2FC) %>%
+        pull(gene) %>%
+        unique() %>%
+        DotPlot(macs, features = ., scale = FALSE) +
+        coord_flip()
+
+    x <-
+        gt::gt(deg_macs_1 %>%
+        group_by(cluster) %>%
+        filter(pct.1 > 0.2) %>%
         slice_max(avg_log2FC, n = 20) %>%
         arrange(cluster, -avg_log2FC)) %>%
-        gt::tab_header(
-            "DEGs in murine tumor-associated monouclear cells (before cleaning)")
+        gt::tab_header("DEGs in murine tumor-associated monouclear cells (before cleaning)")
+
+    gt::gtsave(x, "output/figures/mac_deg_table.png")
+
+    plot_name <-
+        FeaturePlot(
+            macs,
+            features = c("Hbb-bt", "Hbb-bs", "Hba-a1", "Hba-a2"),
+            order = TRUE
+        )
+    ggsave("output/figures/mac_sussing/mac_featureplot_hemoglobin.png",
+           plot = plot_name,
+           width = 10,
+           height = 8)
 
     # Label against the murine tumor immune atlas
     # https://doi.org/10.1101/gr.273300.120
@@ -148,11 +435,14 @@ if(!file.exists("output/rdata/macs_subclustered_cleaned.qs")) {
         as.data.frame()
     names(mac_scores) <- names(mac_marks)
 
+    macs$max_mac_score <- apply(mac_scores, 1, max)
+
     macs <- AddMetaData(macs, mac_scores)
 
-    macs[[]] %>%
+    # Find top scoring signature based on AUC
+    macs <-
+        macs[[]] %>%
         select(
-            seurat_clusters,
             IFN_TAMs,
             Inflam_TAMs,
             LA_TAMs,
@@ -161,34 +451,136 @@ if(!file.exists("output/rdata/macs_subclustered_cleaned.qs")) {
             Prolif_TAMs,
             RTM_TAMs,
             cTIMs,
-            ncMonos) %>%
-        group_by(seurat_clusters) %>%
-        summarise_all(mean) %>%
-        print(n = nrow(.))
+            ncMonos
+        ) %>%
+        rownames_to_column("cell_id") %>%
+        pivot_longer(
+            cols = -cell_id,
+            names_to = "signature",
+            values_to = "auc"
+        ) %>%
+        group_by(cell_id) %>%
+        arrange(desc(auc), .by_group = TRUE) %>%
+        slice_head(n = 1) %>%
+        dplyr::rename(auc_top_type = signature, auc_top_score = auc) %>%
+        column_to_rownames("cell_id") %>%
+        AddMetaData(macs, .)
+
+    VlnPlot(
+        macs,
+        features = c("cell_score", "max_mac_score"),
+        ncol = 1
+    ) +
+        NoLegend() +
+        geom_hline(yintercept = 0.25, linetype = "dashed") +
+        geom_hline(yintercept = 0.4, linetype = "dashed")
+
+    ggsave("output/figures/mac_sussing/mac_auc_top_type_vln.png",
+           width = 10,
+           height = 8)
+
+    table(macs$seurat_clusters, macs$auc_top_type) %>%
+        pheatmap::pheatmap(
+            scale = "row",
+            file = "output/figures/mac_sussing/mac_auc_top_type.png"
+        )
+
+    table(macs$seurat_clusters, macs$cell_type) %>%
+        pheatmap::pheatmap(
+            scale = "row",
+            file = "output/figures/mac_sussing/cell_type_top_type.png"
+        )
+
+    # Look for scar macs
+    plot_name <-
+        DotPlot(
+            macs,
+            features = c(
+                "Trem2",
+                "Cd9",
+                "Ifitm2",
+                "Il1b",
+                "Spp1",
+                "Lgals3",
+                "Ccr2",
+                "Tnfrsf12a",
+                "Fn1"
+            ),
+            scale = FALSE
+        ) +
+        theme(plot.background = element_rect(fill = "white"))
+    ggsave("output/figures/mac_sussing/dotplot_scar_mac_markers.png",
+           plot = plot_name,
+           width = 10,
+           height = 8)
+
+    plot_name <-
+        FeaturePlot(
+            macs,
+            features = c(
+                "Trem2",
+                "Cd9",
+                "Ifitm2",
+                "Il1b",
+                "Spp1",
+                "Lgals3",
+                "Ccr2",
+                "Tnfrsf12a",
+                "Fn1"
+            ),
+            order = TRUE,
+            ncol = 3
+        )
+    ggsave("output/figures/mac_sussing/featureplot_scar_mac_markers.png",
+           plot = plot_name,
+           width = 20,
+           height = 15)
+
+    ################################################################### Stopped here ###################################################################
+
+    ########
+    kick_clusters <-
+        c(12, 13) # RBCs and low cell score
 
     auc_plots <- lapply(names(mac_scores), function(i) {
         r_feature_plot(macs, i, min.cutoff = 0.2, max.cutoff = 0.6)
     })
     wrap_plots(auc_plots, ncol = 4)
 
+    macs <-
+        macs[[]] %>%
+        select(
+            IFN_TAMs,
+            Inflam_TAMs,
+            LA_TAMs,
+            Angio_TAMs,
+            Reg_TAMs,
+            Prolif_TAMs,
+            RTM_TAMs,
+            cTIMs,
+            ncMonos
+        ) %>%
+        rownames_to_column("cell_id") %>%
+        pivot_longer(
+            cols = -cell_id,
+            names_to = "signature",
+            values_to = "auc"
+        ) %>%
+        group_by(cell_id) %>%
+        arrange(desc(auc), .by_group = TRUE) %>%
+        slice_head(n = 1) %>%
+        dplyr::rename(auc_top_type = signature, auc_top_score = auc) %>%
+        column_to_rownames("cell_id") %>%
+        AddMetaData(macs, .)
 
-    # Clean up misclassified clusters
-    macs <- subset(macs,
-        idents = c(
-            6, # Epithelial
-            8, # Fibroblast
-            9, # Unknown, Tumor?
-            10, # Endothelial
-            11, # Lymphocytes
-            12, # Unknown, Tumor?
-            13, # Alveolar macs
-            16, # Fibroblasts
-            17, # Goblet
-            18, # Erythrocyte
-            19, # Neural
-            20 # Mast
-        ),
-        invert = TRUE)
+    deg_macs_1 %>%
+        group_by(cluster) %>%
+        filter(pct.1 > 0.2) %>%
+        slice_max(avg_log2FC, n = 20) %>%
+        arrange(cluster, -avg_log2FC) %>%
+        filter(cluster %in% c(7, 9, 15, 18)) %>%
+        print(n = 80)
+
 
     # Reprocess and plot
     macs <- macs %>%
@@ -200,21 +592,16 @@ if(!file.exists("output/rdata/macs_subclustered_cleaned.qs")) {
         FindNeighbors(reduction = "harmony", dims = 1:30) %>%
         FindClusters(resolution = seq(0.1, 0.8, 0.1))
 
-    plots <- parallel::mclapply(
-        c(0.01, 0.1, 0.3, 1, 3),
-        function(i) {
-            RunUMAP(macs,
-                reduction = "harmony",
-                dims = 1:30,
-                min.dist = i,
-                spread = 5,
-                ) %>%
-            r_dim_plot()
-    }, mc.cores = parallelly::availableCores())
-    wrap_plots(plots, ncol = 3)
+    DimPlot(
+        macs,
+        group.by = paste0("RNA_snn_res.", seq(0.1, 0.8, 0.1)),
+        label = TRUE,
+        repel = TRUE,
+        ncol = 2
+    )
 
-    # A resolution of 0.5 looks pretty good
-    Idents(macs) <- macs$RNA_snn_res.0.8
+    # A resolution of 0.1 looks pretty good
+    Idents(macs) <- macs$RNA_snn_res.0.1
     r_dim_plot(macs, split.by = "tissue")
 
     macs <- run_fdl(macs)
@@ -234,7 +621,21 @@ r_dim_plot(macs, split.by = "tissue")
 
 if(!file.exists("misc/murine_macs_assignments.qs")) {
     # Re-characterize the subclustered macs
-    deg_macs_2 <- FindAllMarkers(macs)
+    deg_macs_2 <-
+        FindAllMarkers(macs) %>%
+        group_by(cluster) %>%
+        slice_max(avg_log2FC, n = 100) %>%
+        arrange(cluster, -avg_log2FC)
+
+
+    ####################################################### This is not finding any of mac_marks genes in the DE list. Why?  #######################################################
+    stuff <-
+        lapply(
+            names(mac_marks),
+            function(x) deg_macs_2$gene %in% mac_marks[[x]]
+        ) %>%
+        bind_cols()
+    colnames(stuff) <- names(mac_marks)
 
     gt::gt(deg_macs_2 %>%
         group_by(cluster) %>%
@@ -285,6 +686,8 @@ if(!file.exists("misc/murine_macs_assignments.qs")) {
     macs$macs_assignment <- qs::qread("misc/murine_macs_assignments.qs")
 }
 
+
+## May need to update these as dotplot not great
 mac_genes <- c(
     "Cxcl10", "Ly6c2", "Ifit3",  # Classical TIMs
     "Ace", "Spn", "Itgal",  # Nonclassical TIMs
