@@ -30,15 +30,21 @@ all_dim
 
 # Correct the data for model
 ```{r harmonize_model, dependson='merge_all', eval=TRUE}
-all_sobj$model <- "BALBC"
-all_sobj$model[
-    all_sobj$sample %in% c("C57BL6", "F420", "tibia_F420")
-    ] <- "C57BL6"
-all_sobj <- all_sobj %>%
-    harmony::RunHarmony(group.by.vars = "model", dims.use = 1:30) %>%
-    RunUMAP(reduction = "harmony", dims = 1:30) %>%
-    FindNeighbors(reduction = "harmony", dims = 1:30) %>%
-    FindClusters(resolution = 0.2)
+if(!file.exists("output/rdata/all_sobj_integrated.qs")) {
+    all_sobj$model <- "BALBC"
+    all_sobj$model[
+        all_sobj$sample %in% c("C57BL6", "F420", "tibia_F420")
+        ] <- "C57BL6"
+    all_sobj <- all_sobj %>%
+        harmony::RunHarmony(group.by.vars = "model", dims.use = 1:30) %>%
+        RunUMAP(reduction = "harmony", dims = 1:30) %>%
+        FindNeighbors(reduction = "harmony", dims = 1:30) %>%
+        FindClusters(resolution = 0.2)
+    
+    qs::qsave(all_sobj, "output/rdata/all_sobj_integrated.qs")
+} else {
+    all_sobj <- qs::qread("output/rdata/all_sobj_integrated.qs")
+}
 
 p1 <- r_dim_plot(all_sobj,
     group.by = "model",
@@ -51,96 +57,29 @@ p2 <- r_dim_plot(all_sobj,
 p3 <- r_dim_plot(all_sobj,
     group.by = "seurat_clusters")
 p1 + p2 + p3
-
-qs::qsave(all_sobj, "output/rdata/all_sobj_integrated.qs")
 ```
-
 
 # Grab just macrophages and sub cluster them
-```{r immune, dependson='merge_all', eval=TRUE}
-if (!file.exists("misc/murine_macs.qs")) {
-    mac_ids <- all_sobj@meta.data %>%
-        filter(cell_type %in% c(
-            "Monocytes",
-            "Mono",
-            "Int Mf",
-            "Macrophages",
-            "Macrophages activated",
-            "DC1",
-            "DC2"
-        )) %>%
-        rownames()
-    qs::qsave(mac_ids, "misc/murine_macs.qs")
-} else {
-    mac_ids <- qs::qread("misc/murine_macs.qs")
-}
+```{r immune, dependson='harmonize_model', eval=TRUE}
+if(!file.exists("output/rdata/output/rdata/macs_subclustered.qs")) {
+    if (!file.exists("misc/murine_macs.qs")) {
+        mac_ids <- all_sobj@meta.data %>%
+            filter(cell_type %in% c(
+                "Monocytes",
+                "Mono",
+                "Int Mf",
+                "Macrophages",
+                "Macrophages activated",
+                "DC1",
+                "DC2"
+            )) %>%
+            rownames()
+        qs::qsave(mac_ids, "misc/murine_macs.qs")
+    } else {
+        mac_ids <- qs::qread("misc/murine_macs.qs")
+    }
 
-macs <- subset(all_sobj, cells = mac_ids) %>%
-    FindVariableFeatures() %>%
-    ScaleData() %>%
-    RunPCA() %>%
-    harmony::RunHarmony(group.by.vars = "model", dims.use = 1:30) %>%
-    RunUMAP(reduction = "harmony", dims = 1:30) %>%
-    FindNeighbors(reduction = "harmony", dims = 1:30) %>%
-    FindClusters(resolution = seq(0.1, 0.8, 0.1))
-
-# clustree::clustree(macs)
-
-# A resolution of 0.3 looks pretty good
-macs$seurat_clusters <- macs$RNA_snn_res.0.3
-Idents(macs) <- macs$seurat_clusters
-
-p1 <- r_dim_plot(macs, group.by = "seurat_clusters")
-p2 <- r_dim_plot(macs, group.by = "cell_type")
-p3 <- r_dim_plot(macs, group.by = "sample")
-p1 + p2 + p3
-
-# Establish groups by tissue type
-macs$tissue <- "unassigned"
-macs$tissue[macs$sample %in% c("tibia_F420", "tibia_K7M2")] <- "Tibia Tumor"
-macs$tissue[macs$sample %in% c("F420", "K7M2")] <- "Lung Metastasis"
-macs$tissue[macs$sample %in% c("C57BL6", "BALBC")] <- "Healthy Lung"
-
-qs::qsave(macs, "output/rdata/macs_subclustered.qs")
-```
-
-# Plot the macrophages
-```{r macs, dependson='immune', eval=TRUE}
-if(!file.exists("output/rdata/macs_subclustered_cleaned.qs")) {
-    r_dim_plot(macs, split.by = "tissue")
-    macs <- run_fdl(macs)
-    r_dim_plot(macs, split.by = "tissue", reduction = "fdl")
-
-    deg_macs_1 <- FindAllMarkers(macs)
-
-    gt::gt(deg_macs_1 %>%
-        group_by(cluster) %>%
-        filter(pct.1 > 0.2) %>%
-        slice_max(avg_log2FC, n = 20) %>%
-        arrange(cluster, -avg_log2FC)) %>%
-        gt::tab_header(
-            "DEGs in murine tumor-associated monouclear cells (before cleaning)")
-
-    # Clean up misclassified clusters
-    macs <- subset(macs,
-        idents = c(
-            6, # Epithelial
-            8, # Fibroblast
-            9, # Unknown, Tumor?
-            10, # Endothelial
-            11, # Lymphocytes
-            12, # Unknown, Tumor?
-            13, # Alveolar macs
-            16, # Fibroblasts
-            17, # Goblet
-            18, # Erythrocyte
-            19, # Neural
-            20 # Mast
-        ),
-        invert = TRUE)
-
-    # Reprocess and plot
-    macs <- macs %>%
+    macs <- subset(all_sobj, cells = mac_ids) %>%
         FindVariableFeatures() %>%
         ScaleData() %>%
         RunPCA() %>%
@@ -149,26 +88,104 @@ if(!file.exists("output/rdata/macs_subclustered_cleaned.qs")) {
         FindNeighbors(reduction = "harmony", dims = 1:30) %>%
         FindClusters(resolution = seq(0.1, 0.8, 0.1))
 
-    # A resolution of 0.8 looks pretty good
-    Idents(macs) <- macs$RNA_snn_res.0.8
-    r_dim_plot(macs, split.by = "tissue")
+    # clustree::clustree(macs)
 
-    macs <- run_fdl(macs)
-    r_dim_plot(macs, split.by = "tissue", reduction = "fdl")
+    # A resolution of 0.3 looks pretty good
+    macs$seurat_clusters <- macs$RNA_snn_res.0.3
+    Idents(macs) <- macs$seurat_clusters
 
-    qs::qsave(macs, "output/rdata/macs_subclustered_cleaned.qs")
+    p1 <- r_dim_plot(macs, group.by = "seurat_clusters")
+    p2 <- r_dim_plot(macs, group.by = "cell_type")
+    p3 <- r_dim_plot(macs, group.by = "sample")
+    p1 + p2 + p3
+
+    # Establish groups by tissue type
+    macs$tissue <- "unassigned"
+    macs$tissue[macs$sample %in% c("tibia_F420", "tibia_K7M2")] <- "Tibia Tumor"
+    macs$tissue[macs$sample %in% c("F420", "K7M2")] <- "Lung Metastasis"
+    macs$tissue[macs$sample %in% c("C57BL6", "BALBC")] <- "Healthy Lung"
+
+    qs::qsave(macs, "output/rdata/macs_subclustered.qs")
 } else {
-    macs <- qs::qread("output/rdata/macs_subclustered_cleaned.qs")
+    macs <- qs::qread("output/rdata/macs_subclustered.qs")
 }
+```
 
-p1 <- r_dim_plot(macs, group.by = "seurat_clusters")
-p2 <- r_dim_plot(macs, group.by = "cell_type")
-p3 <- r_dim_plot(macs, group.by = "sample", shuffle = TRUE)
-p1 + p2 + p3
-
-r_dim_plot(macs, split.by = "tissue")
-
+# Plot the macrophages
+```{r macs, dependson='immune', eval=TRUE}
 if(!file.exists("misc/murine_macs_assignments.qs")) {
+    if(!file.exists("output/rdata/macs_subclustered_cleaned.qs")) {
+        r_dim_plot(macs, split.by = "tissue")
+        macs <- run_fdl(macs)
+        r_dim_plot(macs, split.by = "tissue", reduction = "fdl")
+
+        deg_macs_1 <- FindAllMarkers(macs)
+
+        gt::gt(deg_macs_1 %>%
+            group_by(cluster) %>%
+            filter(pct.1 > 0.2) %>%
+            slice_max(avg_log2FC, n = 20) %>%
+            arrange(cluster, -avg_log2FC)) %>%
+            gt::tab_header(
+                "DEGs in murine tumor-associated monouclear cells (before cleaning)")
+
+        # Clean up misclassified clusters
+        macs <- subset(macs,
+            idents = c(
+                6, # Epithelial
+                8, # Fibroblast
+                9, # Unknown, Tumor?
+                10, # Endothelial
+                11, # Lymphocytes
+                12, # Unknown, Tumor?
+                13, # Alveolar macs
+                16, # Fibroblasts
+                17, # Goblet
+                18, # Erythrocyte
+                19, # Neural
+                20 # Mast
+            ),
+            invert = TRUE)
+
+        # Reprocess and plot
+        macs <- macs %>%
+            FindVariableFeatures() %>%
+            ScaleData() %>%
+            RunPCA() %>%
+            harmony::RunHarmony(group.by.vars = "model", dims.use = 1:30) %>%
+            RunUMAP(reduction = "harmony",
+                dims = 1:30,
+                min.dist = 0.5,
+                spread = 5) %>%
+            FindNeighbors(reduction = "harmony", dims = 1:30) %>%
+            FindClusters(resolution = seq(0.1, 1, 0.1))
+
+        # future::plan(multisession, workers = parallelly::availableCores())
+        # plots <- future.apply::future_lapply(
+        #     c(0.01, 0.1, 0.3, 1, 3),
+        #     function(i) {
+        #         RunUMAP(macs,
+        #             reduction = "harmony",
+        #             dims = 1:30,
+        #             min.dist = i,
+        #             spread = 5
+        #         ) %>%
+        #         r_dim_plot()
+        #     })
+        # wrap_plots(plots, ncol = 3)
+
+        # A resolution of 0.8 looks pretty good
+        Idents(macs) <- macs$RNA_snn_res.1
+        r_dim_plot(macs, split.by = "tissue")
+
+        macs <- run_fdl(macs)
+        r_dim_plot(macs, split.by = "tissue", reduction = "fdl")
+
+        qs::qsave(macs, "output/rdata/macs_subclustered_cleaned.qs")
+    } else {
+        macs <- qs::qread("output/rdata/macs_subclustered_cleaned.qs")
+    }
+
     # Re-characterize the subclustered macs
     deg_macs_2 <- FindAllMarkers(macs)
 
@@ -239,7 +256,7 @@ if(!file.exists("misc/murine_macs_assignments.qs")) {
         r_feature_plot(macs, i, min.cutoff = 0.2, max.cutoff = 0.6)
     })
     wrap_plots(auc_plots, ncol = 4)
-   
+
     # Look at expression of key marker genes by cluster
     mac_genes <- c(
         "S100a8", "Sell", "Ifitm6",  # cMonocyte
@@ -300,13 +317,39 @@ if(!file.exists("misc/murine_macs_assignments.qs")) {
 
     qs::qsave(macs$macs_assignment, "misc/murine_macs_assignments.qs")
 } else {
-    macs$macs_assignment <- qs::qread("misc/murine_macs_assignments.qs")
+    macs_assignment <- qs::qread("misc/murine_macs_assignments.qs")
+    macs <- subset(macs, cells = names(macs_assignment))
+    macs <- subset(macs, subset = !is.na(macs$tissue))
+    macs$macs_assignment <- macs_assignment
+
+    macs <- macs %>%
+        FindVariableFeatures() %>%
+        ScaleData() %>%
+        RunPCA() %>%
+        harmony::RunHarmony(group.by.vars = "model", dims.use = 1:30) %>%
+        RunUMAP(reduction = "harmony",
+            dims = 1:30,
+            min.dist = 0.5,
+            spread = 5) %>%
+        FindNeighbors(reduction = "harmony", dims = 1:30) %>%
+        FindClusters(resolution = seq(0.1, 1, 0.1))
+    
+    Idents(macs) <- macs$macs_assignment
 }
 
+p1 <- r_dim_plot(macs, group.by = "seurat_clusters")
+p2 <- r_dim_plot(macs, group.by = "cell_type")
+p3 <- r_dim_plot(macs, group.by = "sample", shuffle = TRUE)
+p1 + p2 + p3
+
+r_dim_plot(macs, split.by = "tissue")
+```
+
+```{r mac_plots, dependson='macs', eval=TRUE}
 mac_genes <- c(
     "S100a8", "Sell", "Ifitm6",  # cMonocyte
     "Itgal", "Ace", "Spn",  # ncMonocyte
-    "C1qa", "", "",  # TAMs, Osteoclast-like?, https://doi.org/10.1186/s41232-022-00213-x
+    "C1qa",  # TAMs, Osteoclast-like?, https://doi.org/10.1186/s41232-022-00213-x
     "Lyve1", "Mrc1",  # Tissue resident/interstitial
     "Trem2", "Cd9", "Gpnmb", "Spp1",  # Scar-associated, see https://doi.org/10.1038/s41586-019-1631-3
     "Ifit1", "Ifit2", "Cxcl10", # IFN-TAMs
@@ -328,19 +371,6 @@ DotPlot(macs,
     scale_y_discrete(limits = rev) +
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
     coord_fixed()
-
-macs$macs_assignment <- macs$macs_assignment %>%
-    factor(levels = c(
-        "scarMacs",
-        "ocMacs",
-        "Pre-DC",
-        "Cycling",
-        "cMonocyte",
-        "ncMonocyte",
-        "DC1",
-        "DC2",
-        "angioMacs",
-        "Interstitial"))
 
 r_dim_plot(macs, group.by = "macs_assignment", split.by = "tissue")
 
