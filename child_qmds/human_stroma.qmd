@@ -184,7 +184,8 @@ mets_meta <- tribble(
     "/gpfs0/home2/gdrobertslab/lab/Counts/S0218/filtered_feature_bc_matrix", "S0218", "Roberts Lab", "Metastasis", "nucleus",
     "/gpfs0/home2/gdrobertslab/lab/Counts/SC069/filtered_feature_bc_matrix/", "SC069", "Roberts Lab", "Metastasis", "nucleus",
     "/gpfs0/home2/gdrobertslab/lab/Counts/SC072/filtered_feature_bc_matrix/", "SC072", "Roberts Lab", "Metastasis", "nucleus",
-    "/gpfs0/home2/gdrobertslab/lab/Counts/SC073/filtered_feature_bc_matrix/", "SC073", "Roberts Lab", "Metastasis", "nucleus")
+    "/gpfs0/home2/gdrobertslab/lab/Counts/SC073/filtered_feature_bc_matrix/", "SC073", "Roberts Lab", "Metastasis", "nucleus",
+    )
 
 met_lung <- mclapply(1:nrow(mets_meta),
     function(m) {
@@ -400,7 +401,7 @@ r_dim_plot(lungs, "Manual Assignments", group.by = "manual_assignments", split.b
 ```{r}
 if(!file.exists("output/rdata/human_epithelial.qs")) {
     epi <- subset(lungs, manual_assignments == c(
-        "Alveolar epithelium", "Stem/Proliferating", "Differentiating"))
+        "Alveolar epithelium", "Stem/Proliferating"))
 
     # Reprocess the subsetted cells
     epi <- DietSeurat(epi, assays = "RNA") %>%
@@ -412,14 +413,30 @@ if(!file.exists("output/rdata/human_epithelial.qs")) {
         RunUMAP(reduction = "harmony", dims = 1:20) %>%
         FindNeighbors(reduction = "harmony", dims = 1:20) %>%
         FindClusters(resolution = 0.3)
-
+    
     r_dim_plot(epi, group.by = "type")
-    r_dim_plot(epi, group.by = "cell_type", repel = TRUE) +
-        theme(legend.position = "right")
-    r_dim_plot(epi)
 
+    epi <- run_fdl(epi)
+    r_dim_plot(epi, reduction = "fdl")
+
+    p1 <- r_dim_plot(subset(epi, type == "Healthy"),
+        group.by = "cell_type",
+        repel = TRUE,
+        shuffle = TRUE)
+    p2 <- r_dim_plot(subset(epi, type == "Metastasis"),
+        group.by = "annotations",
+        repel = TRUE,
+        shuffle = TRUE)
+    p3 <- r_dim_plot(epi, "Integrated epithelial")
+    p3 | p1 | p2
+
+    # epi[[]] %>%
+    #     select(seurat_clusters, cell_type) %>%
+    #     group_by(seurat_clusters, cell_type) %>%
+    #     summarize(n = n())
+    
     epi <- subset(epi,
-        idents = c("10", "11", "12", "13", "16", "19"),
+        idents = c(2, 3, 6),
         invert = TRUE)
 
     # Normalize the numbers of cells between normal and mets
@@ -430,15 +447,16 @@ if(!file.exists("output/rdata/human_epithelial.qs")) {
         epi[[t]] <- subset(epi[[t]], cells = sample(colnames(epi[[t]]), size = ncells))
     }
 
-    epi <- merge(epi[[1]], epi[[2]])
+    epi <- merge(epi[[1]], epi[[2]]) %>%
+        JoinLayers()
 
     # Reprocess the subsetted cells
     epi <- DietSeurat(epi, assays = "RNA") %>%
         FindVariableFeatures() %>%
         ScaleData() %>%
         RunPCA(npcs = 20, verbose = FALSE) %>%
-        harmony::RunHarmony(group.by.vars = c("src", "type"), lambda = c(1, 1)) %>%
-        RunUMAP(reduction = "harmony", dims = 1:20, seed.use = 555) %>%
+        harmony::RunHarmony(group.by.vars = c("type")) %>%
+        RunUMAP(reduction = "harmony", dims = 1:20) %>%
         FindNeighbors(reduction = "umap", dims = 1:2) %>%
         FindClusters(resolution = 0.1)
 
@@ -458,25 +476,12 @@ if(!file.exists("output/rdata/human_epithelial.qs")) {
         arrange(cluster, -avg_log2FC)) %>%
         gt::tab_header("DEGs in human AECs (by cluster)")
 
-    # One more cleanup - non-epithelial carryover
-    epi <- subset(epi, idents = c("9", "5", "7"), invert = TRUE)
-
-    # Reprocess the subsetted cells
-    epi <- RunPCA(epi, npcs = 20, verbose = FALSE) %>%
-        harmony::RunHarmony(group.by.vars = c("id", "method"), lambda = c(1, 0.5)) %>%
-        RunUMAP(reduction = "harmony", dims = 1:20, seed.use = 444) %>%
-        FindNeighbors(reduction = "umap", dims = 1:2) %>%
-        FindClusters(resolution = 0.3)
-
     epi <- kill_cc(epi)
     Idents(epi) <- epi$seurat_clusters
 
     r_dim_plot(epi, group.by = "type")
     r_dim_plot(epi, group.by = "cell_type")
     r_dim_plot(epi)
-
-# One last cleanup of non-epithelial cells
-epi <- subset(epi, idents = "8", invert = T)
 
     qs::qsave(epi, "output/rdata/human_epithelial.qs")
 } else {
@@ -522,15 +527,17 @@ gt::gt(epi_marks %>%
 # Assign cell types
 epi2 <- RenameIdents(epi,
     `0` = "0",
-    `1` = "Basaloid",
-    `2` = "cAEC2",
+    `1` = "",
+    `2` = "",
     `3` = "3",
-    `4` = "AEC1",
+    `4` = "Basaloid",
     `5` = "Basaloid",
-    `6` = "pAEC2",
+    `6` = "",
     `7` = "7",
-    `8` = "pAEC2",
-    `9` = "9")
+    `8` = "",
+    `9` = "9",
+    `10` = "cAEC2",
+    `11` = "cAEC2")
 
 epi2$epi_type <- Idents(epi2)
 
@@ -543,7 +550,7 @@ epi_genes <- c(
     "SFTPA1", "SFTPC", "PGC", # AEC2
     "AREG", "PIGR", # pAEC2
     "TOP2A", "MKI67", "CENPF", # cAEC2
-    "KRT17", "CDH2", "LAMB3", "FN1", # Basaloid
+    "KRT17", "CDH2", "LAMB3", "FN1", "TP63", "LAMC2", # Basaloid
     "AGER", "CAV1", "RTKN2") # AEC1
 
 epi2$epi_type <- factor(epi2$epi_type, levels = c("AEC1", "Basaloid", "cAEC2", "pAEC2", "AEC2", 0:12))
