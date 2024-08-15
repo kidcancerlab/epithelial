@@ -329,12 +329,19 @@ DimPlot()
         harmony::RunHarmony(group.by.vars = "model", dims.use = 1:30) %>%
         RunUMAP(reduction = "harmony",
             dims = 1:30,
-            min.dist = 0.5,
+            local.connectivity = 10L,
             spread = 5) %>%
         FindNeighbors(reduction = "harmony", dims = 1:30) %>%
-        FindClusters(resolution = seq(0.1, 1, 0.1))
-    
-    Idents(macs) <- macs$macs_assignment
+        FindClusters(resolution = 0.8)
+
+    r_dim_plot(macs, split.by = "tissue")
+
+    macs <- run_fdl(macs)
+    r_dim_plot(macs, split.by = "tissue", reduction = "fdl")
+
+    qs::qsave(macs, "output/rdata/macs_subclustered_cleaned.qs")
+} else {
+    macs <- qs::qread("output/rdata/macs_subclustered_cleaned.qs")
 }
 
 p1 <- r_dim_plot(macs, group.by = "seurat_clusters")

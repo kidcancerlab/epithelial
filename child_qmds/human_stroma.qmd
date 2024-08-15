@@ -339,7 +339,7 @@ if(!file.exists("output/rdata/integrated_lungs.qs")) {
 }
 
 p1 <- r_dim_plot(subset(lungs, type == "Healthy"),
-    group.by = "ann_level_2",
+    group.by = "cell_type",
     repel = TRUE,
     shuffle = TRUE)
 p2 <- r_dim_plot(subset(lungs, type == "Metastasis"),
@@ -349,7 +349,7 @@ p2 <- r_dim_plot(subset(lungs, type == "Metastasis"),
 p3 <- r_dim_plot(lungs, "Integrated Stroma")
 p3 | p1 | p2
 
-r_dim_plot(lungs, split.by = "type", group.by = "ann_level_2", repel = TRUE)
+r_dim_plot(lungs, split.by = "type", group.by = "cell_type", repel = TRUE)
 
 # Perform a semi-automated, manually verified cell type assignment
 # ***This needs to be redone since re-building the healthy lung reference
@@ -514,22 +514,23 @@ epi_marks <- FindAllMarkers(epi)
 
 gt::gt(epi_marks %>%
     group_by(cluster) %>%
+    filter(pct.1 > 0.5) %>%
     slice_max(avg_log2FC, n = 20) %>%
     arrange(cluster, -avg_log2FC)) %>%
     gt::tab_header("DEGs in human AECs (by cluster)")
 
 # Assign cell types
 epi2 <- RenameIdents(epi,
-    `0` = "AEC2",
-    `1` = "AEC1",
-    `2` = "Basaloid",
-    `3` = "pAEC2",
-    `4` = "Basaloid",
-    `5` = "AEC2",
-    `6` = "cAEC2",
-    `7` = "Basaloid",
-    `9` = "cAEC2",
-    `10` = "cAEC2")
+    `0` = "0",
+    `1` = "Basaloid",
+    `2` = "cAEC2",
+    `3` = "3",
+    `4` = "AEC1",
+    `5` = "Basaloid",
+    `6` = "pAEC2",
+    `7` = "7",
+    `8` = "pAEC2",
+    `9` = "9")
 
 epi2$epi_type <- Idents(epi2)
 
@@ -540,10 +541,10 @@ r_dim_plot(epi2,
 # Consolidate into a summary dotplot
 epi_genes <- c(
     "SFTPA1", "SFTPC", "PGC", # AEC2
-    "AREG", "MUC1", # pAEC2
+    "AREG", "PIGR", # pAEC2
     "TOP2A", "MKI67", "CENPF", # cAEC2
     "KRT17", "CDH2", "LAMB3", "FN1", # Basaloid
-    "AGER", "CAV1", "CLDN18") # AEC1
+    "AGER", "CAV1", "RTKN2") # AEC1
 
 epi2$epi_type <- factor(epi2$epi_type, levels = c("AEC1", "Basaloid", "cAEC2", "pAEC2", "AEC2", 0:12))
 
@@ -552,8 +553,8 @@ DotPlot(epi2,
     group.by = "epi_type",
     dot.scale = 8,
     cols = "RdBu") +
-    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
-
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+    coord_fixed()
 ```
 
 # Subcluster macrophages

@@ -43,7 +43,7 @@ r_dim_plot(
     mouse_data,
     group.by = "cell_type_final",
     label = TRUE,
-    split.by = "sample_name"
+    split.by = "obj_name"
 )
 ```
 
@@ -154,7 +154,7 @@ pdf("output/figures/nichenetr/nichenet_junk_plots.pdf")
 nichenet_out <-
     parallel::mclapply(
         all_cell_types,
-        mc.cores = parallel::detectCores(),
+        mc.cores = parallelly::availableCores(),
         mc.preschedule = FALSE,
         function(receiver_cell) {
             sender_cells <-
