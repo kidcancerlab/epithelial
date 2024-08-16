@@ -52,7 +52,13 @@ all_ref <-
     JoinLayers() %>%
     process_seurat()
 
-all_ref <- DietSeurat(all_ref, data = FALSE)
+all_ref <-
+    DietSeurat(
+        all_ref,
+        data = FALSE,
+        dimreducs = c("pca", "umap")
+    )
+
 all_ref@meta.data <-
     all_ref@meta.data[, c(
         "cell_type",
@@ -80,6 +86,7 @@ ggsave("output/figures/spatial/spacexr_ref_data.pdf",
        plot_name,
        width = 10,
        height = 10)
+qs::qsave(plot_name, "output/figures/spatial/spacexr_ref_data.qs")
 ```
 
 ### Create the Reference object
@@ -150,11 +157,12 @@ for (cell_type in all_ref$cell_type %>% unique()) {
 
 ## Plot
 ```{r}
-labels <- list("6" = "core",
-               "4" = "middle",
-               "7" = "periphery")
+tumor_clusters <-
+    tumor_only$seurat_clusters %>%
+        as.character() %>%
+        unique()
 
-for (cluster_number in names(labels)) {
+for (cluster_number in tumor_clusters) {
     tumor_c_celltypes <-
         subset(spatial_data, seurat_clusters == cluster_number)@meta.data %>%
         select(colnames(norm_weights)) %>%
@@ -172,14 +180,17 @@ for (cluster_number in names(labels)) {
         geom_point() +
         labs(x = "Normalized Weight",
              y = "Cell Type",
-             title = paste0("Tumor Cell Types in the ",
-                            labels[[cluster_number]]))
+             title = paste0("Tumor Cell Types in Cluster ", cluster_number))
 
-    ggsave(paste0("output/figures/spatial/spacexr_tumor_",
-                  labels[[cluster_number]],
+    ggsave(paste0("output/figures/spatial/spacexr_tumor_cluster",
+                  cluster_number,
                   "_celltypes.png"),
         tumor_c_celltypes,
         width = 8,
         height = 10)
+    qs::qsave(tumor_c_celltypes,
+               paste0("output/figures/spatial/spacexr_tumor_cluster",
+                      cluster_number,
+                      "_celltypes.qs"))
 }
 ```
