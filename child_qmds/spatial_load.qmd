@@ -15,6 +15,11 @@ spatial_data <-
     ) %>%
     subset(nCount_Spatial > 0)
 
+# Seurat hard codes that you're using lowres for the scale factors
+# https://github.com/satijalab/seurat/issues/5614#issuecomment-1194555472
+spatial_data@images$slice1@scale.factors$lowres <-
+    spatial_data@images$slice1@scale.factors$hires
+
 spatial_data <- AddMetaData(spatial_data, GetTissueCoordinates(spatial_data))
 
 GetTissueCoordinates(spatial_data) %>%
@@ -57,11 +62,12 @@ plot_name <-
         label = TRUE
     )
 ggsave(
-    "output/figures/spatial/spatial_dimplot_plot.png",
+    "output/figures/spatial/spatial_dimplot_plot.pdf",
     plot_name,
     width = 15,
     height = 15
 )
+qs::qsave(plot_name, file = "output/figures/spatial/spatial_dimplot_plot.qs")
 
 plot_name <-
     DimPlot(
@@ -70,10 +76,14 @@ plot_name <-
         repel = TRUE
     )
 ggsave(
-    "output/figures/spatial/spatial_umap_plot_by_cluster.png",
+    "output/figures/spatial/spatial_umap_plot_by_cluster.pdf",
     plot_name,
     width = 15,
     height = 10
+)
+qs::qsave(
+    plot_name,
+    file = "output/figures/spatial/spatial_umap_plot_by_cluster.qs"
 )
 
 plot_name <-
@@ -83,11 +93,12 @@ plot_name <-
         pt.size.factor = 2
     )
 ggsave(
-    "output/figures/spatial/spatial_plot_by_feature.png",
+    "output/figures/spatial/spatial_plot_by_feature.pdf",
     plot_name,
     width = 15,
     height = 15
 )
+qs::qsave(plot_name, file = "output/figures/spatial/spatial_plot_by_feature.qs")
 
 vln_plot <-
     VlnPlot(
@@ -97,11 +108,12 @@ vln_plot <-
         cols = sample(rainbow(50))
     )
 ggsave(
-    "output/figures/spatial/vln_plot.png",
+    "output/figures/spatial/vln_tumor_markers_plot.pdf",
     vln_plot,
     width = 10,
     height = 5
 )
+qs::qsave(vln_plot, file = "output/figures/spatial/vln_tumor_markers_plot.qs")
 ```
 
 ## Split out tumor spots
@@ -146,11 +158,13 @@ plot_3 <-
 merged_plot <- patchwork::wrap_plots(plot_1, plot_2, plot_3, ncol = 2)
 
 ggsave(
-    "output/figures/spatial/tumor_clusters_vln.png",
+    "output/figures/spatial/tumor_clusters_vln.pdf",
     merged_plot,
     width = 10,
     height = 10
 )
+qs::qsave(merged_plot, file = "output/figures/spatial/tumor_clusters_vln.qs")
+
 ```
 
 ## Save off the data
