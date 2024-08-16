@@ -39,6 +39,8 @@ DefaultAssay(mouse_data) <- "RNA"
 Idents(mouse_data) <- "cell_type_final"
 mouse_data[["SCT"]] <- NULL
 
+mouse_data <- JoinLayers(mouse_data)
+
 r_dim_plot(
     mouse_data,
     group.by = "cell_type_final",
@@ -219,7 +221,6 @@ nichenet_out <-
                     send_spec = "mouse"
                 )
 
-
             return(nichenet_out)
         })
 dev.off()
@@ -315,7 +316,8 @@ for (receiver_cell in all_cell_types) {
 ```
 
 
-Do the same thing with Cabo samples
+Do the same thing with Cabo samples?
+
 ```{r}
 nint_receptors <-
     c(
