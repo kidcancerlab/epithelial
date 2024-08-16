@@ -74,7 +74,7 @@ NOTE: If you haven't already downloaded and processed, you might need to run thi
 
 ```{r}
 # if(!file.exists("hlca/nl_lung.qs")) {
-#     if (!file.exists("/gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.qs")) {
+#     if (!file.exists("~/lab/GenRef/sc_ref_datasets/human/hlca.qs")) {
 #         options(
 #             reticulate.conda_binary = "/gpfs0/export/apps/easybuild/software/Miniconda3/4.9.2/condabin/conda",
 #             SCP_env_name = "r")
@@ -85,12 +85,12 @@ NOTE: If you haven't already downloaded and processed, you might need to run thi
 #         # Download the annotated full dataset from the Human Lung Cell Atlas project
 #         # https://doi.org/10.1038/s41591-023-02327-2
 #         system(
-#             "curl https://datasets.cellxgene.cziscience.com/3ab47484-a3eb-4f6a-beea-670e1a8fc1e8.h5ad --output /gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.h5ad"
+#             "curl https://datasets.cellxgene.cziscience.com/3ab47484-a3eb-4f6a-beea-670e1a8fc1e8.h5ad --output ~/lab/GenRef/sc_ref_datasets/human/hlca.h5ad"
 #         )
 
 #         # Need to invoke BPCells to handle the large object until we simplify
 #         hlca.data <- BPCells::open_matrix_anndata_hdf5(
-#             path = "/gpfs0/home2/gdrobertslab/rxr014/hlca.h5ad"
+#             path = "~/rxr014/hlca.h5ad"
 #         )
 
 #         # Write the matrix to a directory
@@ -99,16 +99,16 @@ NOTE: If you haven't already downloaded and processed, you might need to run thi
 #         # Now that we have the matrix on disk, we can load it
 #         hlca.mat <- BPCells::open_matrix_dir(dir = "hlca/")
 #         hlca.mat <- Azimuth:::ConvertEnsembleToSymbol(mat = hlca.mat, species = "human")
-#         hlca.meta <- Azimuth::LoadH5ADobs("/gpfs0/home2/gdrobertslab/rxr014/hlca.h5ad")
+#         hlca.meta <- Azimuth::LoadH5ADobs("~/rxr014/hlca.h5ad")
 
 #         # Create Seurat object (just metadata and raw counts)
 #         hlca <- SeuratObject::CreateSeuratObject(counts = hlca.mat, meta.data = hlca.meta)
 
 #         # Write the simplified Seurat object
-#         qs::qsave(hlca, "/gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.qs")
+#         qs::qsave(hlca, "~/lab/GenRef/sc_ref_datasets/human/hlca.qs")
 
 #     } else {
-#         hlca <- qs::qread("/gpfs0/home2/gdrobertslab/lab/GenRef/sc_ref_datasets/human/hlca.qs")
+#         hlca <- qs::qread("~/lab/GenRef/sc_ref_datasets/human/hlca.qs")
 #     }
 
 #     cases <- as.data.frame(hlca@meta.data) %>%
@@ -178,14 +178,13 @@ mets_meta <- tribble(
     ~file, ~Sample_Name, ~Sample_Source, ~Sample_Type, ~method,
     "GSE152048/BC10", "BC10", "GSE152048", "Metastasis", "cell",
     "GSE152048/BC17", "BC17", "GSE152048", "Metastasis", "cell",
-    "/gpfs0/home2/gdrobertslab/lab/Counts/S0058/outs/filtered_feature_bc_matrix/", "S0058", "Roberts Lab", "Metastasis", "cell",
-    "/gpfs0/home2/gdrobertslab/lab/Counts/S0059/outs/filtered_feature_bc_matrix/", "S0059", "Roberts Lab", "Metastasis", "cell",
-    "/gpfs0/home2/gdrobertslab/lab/Counts/S0217/filtered_feature_bc_matrix", "S0217", "Roberts Lab", "Metastasis", "nucleus",
-    "/gpfs0/home2/gdrobertslab/lab/Counts/S0218/filtered_feature_bc_matrix", "S0218", "Roberts Lab", "Metastasis", "nucleus",
-    "/gpfs0/home2/gdrobertslab/lab/Counts/SC069/filtered_feature_bc_matrix/", "SC069", "Roberts Lab", "Metastasis", "nucleus",
-    "/gpfs0/home2/gdrobertslab/lab/Counts/SC072/filtered_feature_bc_matrix/", "SC072", "Roberts Lab", "Metastasis", "nucleus",
-    "/gpfs0/home2/gdrobertslab/lab/Counts/SC073/filtered_feature_bc_matrix/", "SC073", "Roberts Lab", "Metastasis", "nucleus",
-    )
+    "~/lab/Counts/S0058/outs/filtered_feature_bc_matrix/", "S0058", "Roberts Lab", "Metastasis", "cell",
+    "~/lab/Counts/S0059/outs/filtered_feature_bc_matrix/", "S0059", "Roberts Lab", "Metastasis", "cell",
+    "~/lab/Counts/S0217/filtered_feature_bc_matrix", "S0217", "Roberts Lab", "Metastasis", "nucleus",
+    "~/lab/Counts/S0218/filtered_feature_bc_matrix", "S0218", "Roberts Lab", "Metastasis", "nucleus",
+    "~/lab/Counts/SC069/filtered_feature_bc_matrix/", "SC069", "Roberts Lab", "Metastasis", "nucleus",
+    "~/lab/Counts/SC072/filtered_feature_bc_matrix/", "SC072", "Roberts Lab", "Metastasis", "nucleus",
+    "~/lab/Counts/SC073/filtered_feature_bc_matrix/", "SC073", "Roberts Lab", "Metastasis", "nucleus")
 
 met_lung <- mclapply(1:nrow(mets_meta),
     function(m) {
@@ -200,6 +199,12 @@ met_lung <- mclapply(1:nrow(mets_meta),
         return(s)
     }, mc.cores = parallelly::availableCores())
 names(met_lung) <- mets_meta$Sample_Name
+
+# Add samples from the Soragnyi lab (ALSF scPCA)
+# cite 
+mets_meta2 <- tribble(
+    ~file, ~Sample_Name, ~Sample_Source, ~Sample_Type, ~method,
+    "~/lab/ExternalData/alsf/Soragni/SCPCS000522/SCPCL000854_filtered.rds", "SCPCS000522", "ALSF", )
 
 qs::qsave(met_lung, "output/rdata/met_lungs.qs")
 } else {
