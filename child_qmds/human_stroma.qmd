@@ -74,7 +74,7 @@ NOTE: If you haven't already downloaded and processed, you might need to run thi
 
 ```{r}
 # if(!file.exists("hlca/nl_lung.qs")) {
-#     if (!file.exists("~/lab/GenRef/sc_ref_datasets/human/hlca.qs")) {
+#     if (!file.exists("../../../GenRef/sc_ref_datasets/human/hlca.qs")) {
 #         options(
 #             reticulate.conda_binary = "/gpfs0/export/apps/easybuild/software/Miniconda3/4.9.2/condabin/conda",
 #             SCP_env_name = "r")
@@ -85,7 +85,7 @@ NOTE: If you haven't already downloaded and processed, you might need to run thi
 #         # Download the annotated full dataset from the Human Lung Cell Atlas project
 #         # https://doi.org/10.1038/s41591-023-02327-2
 #         system(
-#             "curl https://datasets.cellxgene.cziscience.com/3ab47484-a3eb-4f6a-beea-670e1a8fc1e8.h5ad --output ~/lab/GenRef/sc_ref_datasets/human/hlca.h5ad"
+#             "curl https://datasets.cellxgene.cziscience.com/3ab47484-a3eb-4f6a-beea-670e1a8fc1e8.h5ad --output ../../../GenRef/sc_ref_datasets/human/hlca.h5ad"
 #         )
 
 #         # Need to invoke BPCells to handle the large object until we simplify
@@ -105,10 +105,10 @@ NOTE: If you haven't already downloaded and processed, you might need to run thi
 #         hlca <- SeuratObject::CreateSeuratObject(counts = hlca.mat, meta.data = hlca.meta)
 
 #         # Write the simplified Seurat object
-#         qs::qsave(hlca, "~/lab/GenRef/sc_ref_datasets/human/hlca.qs")
+#         qs::qsave(hlca, "../../../GenRef/sc_ref_datasets/human/hlca.qs")
 
 #     } else {
-#         hlca <- qs::qread("~/lab/GenRef/sc_ref_datasets/human/hlca.qs")
+#         hlca <- qs::qread("../../../GenRef/sc_ref_datasets/human/hlca.qs")
 #     }
 
 #     cases <- as.data.frame(hlca@meta.data) %>%
@@ -174,39 +174,60 @@ if(!file.exists("output/rdata/met_lungs.qs")) {
             extras = "--remove-files")
     }
 
-mets_meta <- tribble(
-    ~file, ~Sample_Name, ~Sample_Source, ~Sample_Type, ~method,
-    "GSE152048/BC10", "BC10", "GSE152048", "Metastasis", "cell",
-    "GSE152048/BC17", "BC17", "GSE152048", "Metastasis", "cell",
-    "~/lab/Counts/S0058/outs/filtered_feature_bc_matrix/", "S0058", "Roberts Lab", "Metastasis", "cell",
-    "~/lab/Counts/S0059/outs/filtered_feature_bc_matrix/", "S0059", "Roberts Lab", "Metastasis", "cell",
-    "~/lab/Counts/S0217/filtered_feature_bc_matrix", "S0217", "Roberts Lab", "Metastasis", "nucleus",
-    "~/lab/Counts/S0218/filtered_feature_bc_matrix", "S0218", "Roberts Lab", "Metastasis", "nucleus",
-    "~/lab/Counts/SC069/filtered_feature_bc_matrix/", "SC069", "Roberts Lab", "Metastasis", "nucleus",
-    "~/lab/Counts/SC072/filtered_feature_bc_matrix/", "SC072", "Roberts Lab", "Metastasis", "nucleus",
-    "~/lab/Counts/SC073/filtered_feature_bc_matrix/", "SC073", "Roberts Lab", "Metastasis", "nucleus")
+    mets_meta <- tribble(
+        ~file, ~Sample_Name, ~Sample_Source, ~Sample_Type, ~method,
+        "../../../Counts/S0058/outs/filtered_feature_bc_matrix/", "S0058", "Roberts Lab", "Metastasis", "cell",
+        "../../../Counts/S0059/outs/filtered_feature_bc_matrix/", "S0059", "Roberts Lab", "Metastasis", "cell",
+        "../../../Counts/S0217/filtered_feature_bc_matrix", "S0217", "Roberts Lab", "Metastasis", "nucleus",
+        "../../../Counts/S0218/filtered_feature_bc_matrix", "S0218", "Roberts Lab", "Metastasis", "nucleus",
+        "../../../Counts/SC069/filtered_feature_bc_matrix/", "SC069", "Roberts Lab", "Metastasis", "nucleus",
+        "../../../Counts/SC072/filtered_feature_bc_matrix/", "SC072", "Roberts Lab", "Metastasis", "nucleus",
+        "../../../Counts/SC073/filtered_feature_bc_matrix/", "SC073", "Roberts Lab", "Metastasis", "nucleus")
 
-met_lung <- mclapply(1:nrow(mets_meta),
-    function(m) {
-        message(paste("Starting to load", mets_meta$Sample_Name[m], "..."))
-        s <- tenx_load_qc(mets_meta$file[m], violin_plot = FALSE) %>%
-            NormalizeData()
-        s$id <- mets_meta$Sample_Name[m]
-        s$src <- mets_meta$Sample_Source[m]
-        s$type <- mets_meta$Sample_Type[m]
-        s$method <- mets_meta$method[m]
-        message(paste(mets_meta$Sample_Name[m], "completed."))
-        return(s)
-    }, mc.cores = parallelly::availableCores())
-names(met_lung) <- mets_meta$Sample_Name
+    met_lung <- mclapply(1:nrow(mets_meta),
+        function(m) {
+            message(paste("Starting to load", mets_meta$Sample_Name[m], "..."))
+            s <- tenx_load_qc(mets_meta$file[m], violin_plot = FALSE) %>%
+                NormalizeData()
+            s$id <- mets_meta$Sample_Name[m]
+            s$src <- mets_meta$Sample_Source[m]
+            s$type <- mets_meta$Sample_Type[m]
+            s$method <- mets_meta$method[m]
+            message(paste(mets_meta$Sample_Name[m], "completed."))
+            return(s)
+        }, mc.cores = parallelly::availableCores())
+    names(met_lung) <- mets_meta$Sample_Name
 
-# Add samples from the Soragnyi lab (ALSF scPCA)
-# cite 
-mets_meta2 <- tribble(
-    ~file, ~Sample_Name, ~Sample_Source, ~Sample_Type, ~method,
-    "~/lab/ExternalData/alsf/Soragni/SCPCS000522/SCPCL000854_filtered.rds", "SCPCS000522", "ALSF", )
+    # Add samples from the Soragnyi lab (ALSF scPCA)
+    # cite https://doi.org/10.1101/2023.05.25.542375
+    mets_meta2 <- tribble(
+        ~file, ~Sample_Name, ~Sample_Source, ~Sample_Type, ~method,
+        "../../../ExternalData/alsf/Soragni/SCPCS000522/SCPCL000854_filtered.rds", "SCPCS000522", "ALSF", "Metastasis", "cell",
+        "../../../ExternalData/alsf/Soragni/SCPCS000522/SCPCL000854_filtered.rds", "SCPCS000523", "ALSF", "Metastasis", "cell",
+        "../../../ExternalData/alsf/Soragni/SCPCS000522/SCPCL000854_filtered.rds", "SCPCS000524", "ALSF", "Metastasis", "cell",
+        "../../../ExternalData/alsf/Soragni/SCPCS000522/SCPCL000854_filtered.rds", "SCPCS000525", "ALSF", "Metastasis", "cell",
+        "../../../ExternalData/alsf/Soragni/SCPCS000522/SCPCL000854_filtered.rds", "SCPCS000526", "ALSF", "Metastasis", "cell")
 
-qs::qsave(met_lung, "output/rdata/met_lungs.qs")
+    met_lung2 <- mclapply(1:nrow(mets_meta2),
+        function(m) {
+            message(paste("Starting to load", mets_meta2$Sample_Name[m], "..."))
+            s <- readRDS(mets_meta2$file[m]) %>%
+                scater::logNormCounts() %>%
+                as.Seurat() %>%
+                NormalizeData()
+            s$id <- mets_meta2$Sample_Name[m]
+            s$src <- mets_meta2$Sample_Source[m]
+            s$type <- mets_meta2$Sample_Type[m]
+            s$method <- mets_meta2$method[m]
+            message(paste(mets_meta2$Sample_Name[m], "completed."))
+            return(s)
+        }, mc.cores = parallelly::availableCores())
+    names(met_lung2) <- mets_meta2$Sample_Name
+
+    # Combine the two lists of Seurat objects
+    met_lung <- c(met_lung, met_lung2)
+
+    qs::qsave(met_lung, "output/rdata/met_lungs.qs")
 } else {
     met_lung <- qs::qread("output/rdata/met_lungs.qs")
 }
