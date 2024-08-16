@@ -2,11 +2,17 @@
 
 ROB491D-1     SP0001      F420 lung met
 
-```{r loadData}
+```{r spatial_loadData}
 #| cache.vars: spatial_data
 spatial_data <-
-    Load10X_Spatial("/home/gdrobertslab/lab/Counts_2/SP0001/outs/",
-                    filename = "filtered_feature_bc_matrix.h5") %>%
+    Load10X_Spatial(
+        "/home/gdrobertslab/lab/Counts_2/SP0001/outs/",
+        filename = "filtered_feature_bc_matrix.h5",
+        image = Read10X_Image(
+            image.dir = "/home/gdrobertslab/lab/Counts_2/SP0001/outs/spatial",
+            image.name = "tissue_hires_image.png"
+        )
+    ) %>%
     subset(nCount_Spatial > 0)
 
 spatial_data <- AddMetaData(spatial_data, GetTissueCoordinates(spatial_data))
@@ -25,7 +31,7 @@ spatial_data$sample_id <- "SP0001"
 ```
 
 ## Process the data
-```{r processData}
+```{r spatial_processData}
 spatial_data <-
     spatial_data %>%
     SCTransform(assay = "Spatial") %>%
@@ -36,14 +42,14 @@ spatial_data <-
 ```
 
 ## Add in module for tumor marker genes
-```{r addTumorMarkers}
+```{r spatial_addTumorMarkers}
 tumor_features <- c("Runx2", "Fn1", "Mki67", "Col1a1")
 spatial_data <-
     AddModuleScore(spatial_data, list(tumor_features), name = "tumor_markers")
 ```
 
 ## Make some plots of the data
-```{r plotStuff}
+```{r spatial_plotStuff}
 plot_name <-
     SpatialDimPlot(
         spatial_data,
@@ -99,7 +105,7 @@ ggsave(
 ```
 
 ## Split out tumor spots
-```{r splitTumor}
+```{r spatial_splitTumor}
 col_cutoff <- 1
 
 tumor_clusters <-
@@ -107,7 +113,7 @@ tumor_clusters <-
     select(tumor_markers1, seurat_clusters) %>%
     rownames_to_column("spot") %>%
     group_by(seurat_clusters) %>%
-    summarize(tumor_median = median(tumor_markers1)) %>%
+    dplyr::summarize(tumor_median = median(tumor_markers1)) %>%
     arrange(desc(tumor_median)) %>% # Put them in order so we can use this later
     filter(tumor_median > col_cutoff) %>%
     pull(seurat_clusters)
@@ -148,6 +154,6 @@ ggsave(
 ```
 
 ## Save off the data
-```{r eval=FALSE}
+```{r spatial_final_save}
 qs::qsave(spatial_data, file = "output/rdata/spatial_data.qs")
 ```
