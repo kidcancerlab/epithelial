@@ -59,6 +59,7 @@ for directoryName in \
   output/figures/nichenetr/ \
   output/figures/nucleus \
   output/rdata \
+  output/rdata/nucleus \
   output/de \
   output/tables/nichenetr/ \
   results \

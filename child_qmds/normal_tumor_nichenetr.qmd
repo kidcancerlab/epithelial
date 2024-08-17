@@ -403,7 +403,6 @@ gene_lists <-
 gene_lists <-
     list(
         Fgf1_downstream = gene_lists$Fgf1[[1]],
-        #Fgf2_downstream = gene_lists$Fgf2[[1]],
         Vegfa_downstream = gene_lists$Vegfa[[1]],
         Pdgfa_downstream = gene_lists$Pdgfa[[1]],
         Pdgfb_downstream = gene_lists$Pdgfb[[1]]
@@ -422,7 +421,6 @@ FeaturePlot(
     mouse_data,
     features = c(
         "Fgf1_downstream_1",
-        "Fgf2_downstream_2",
         "Vegfa_downstream_3",
         "Pdgfa_downstream_4",
         "Pdgfb_downstream_5"
@@ -498,7 +496,6 @@ FeaturePlot(
     epi_myeloid_data,
     features = c(
         "Fgf1_downstream_1",
-        "Fgf2_downstream_2",
         "Vegfa_downstream_3",
         "Pdgfa_downstream_4",
         "Pdgfb_downstream_5"
@@ -509,7 +506,6 @@ VlnPlot(
     epi_myeloid_data,
     features = c(
         "Fgf1_downstream_1",
-        "Fgf2_downstream_2",
         "Vegfa_downstream_3",
         "Pdgfa_downstream_4",
         "Pdgfb_downstream_5"),
@@ -532,7 +528,6 @@ plot_name <-
         epi_myeloid_data,
         features = c(
             "Fgf1_downstream",
-            "Fgf2_downstream",
             "Vegfa_downstream",
             "Pdgfa_downstream",
             "Pdgfb_downstream"),
@@ -548,7 +543,6 @@ ggsave(
     width = 10,
     height = 15
 )
-
 qs::qsave(
     plot_name,
     "output/figures/nichenetr/epi_myeloid_treatment_aucell_vln.qs"
@@ -556,11 +550,10 @@ qs::qsave(
 
 plot_name <-
     epi_myeloid_data %>%
-    subset(coarse_cell_type %in% c("tumor", "epithelial", "Mono", "TAM", "IM", "AM")) %>%
+    subset(coarse_cell_type %in% c("tumor", "Endothelial", "Mono", "TAM", "IM", "AM", "Cil", "Mes")) %>%
     VlnPlot(
         features = c(
             "Fgf1_downstream",
-            "Fgf2_downstream",
             "Vegfa_downstream",
             "Pdgfa_downstream",
             "Pdgfb_downstream"),
@@ -576,12 +569,11 @@ ggsave(
     width = 10,
     height = 15
 )
-
 qs::qsave(
     plot_name,
     "output/figures/nichenetr/epi_myeloid_treatment_aucell_vln_main.qs"
 )
 
-FeaturePlot(epi_myeloid_data, features = c("Fgf1_downstream", "Fgf2_downstream", "Vegfa_downstream"))
+FeaturePlot(epi_myeloid_data, features = c("Fgf1_downstream", "Vegfa_downstream"))
 ```
 
