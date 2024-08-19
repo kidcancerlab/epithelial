@@ -311,71 +311,8 @@ if(!file.exists("misc/human_met_labels.qs")) {
     met_lung <- merge(met_lung[[1]], met_lung[2:length(met_lung)],
         cell.ids <- names(met_lung)) %>%
             JoinLayers()
-    met_lung$met_labels <- qs$qread("misc/human_met_labels.qs")
-    met_lung <- subset(met_lung, met_labels %in% c("Tumor", "LowQ"), invert = TRUE)
-}
-
-# Check to see if all of the relevant annotation files are present
-file_check <- TRUE
-for(f in names(met_lung)) {
-    if(!file.exists(paste0("misc/", f, "-tumor_assignments.qs"))) {
-        file_check <- FALSE
-        stop("At least some of the tumor assignment files are missing. You will need to run the code process in this file manually before proceding to create those files.")
-    }
-}
-
-# If all of the annotation files are present, then
-
-if (file_check) {
-# Separate the tumor cells from the lung stroma
-    met_stroma <- lapply(seq_along(met_lung), function (i) {
-        met_lung[[i]]$tumor <- qs::qread(file = paste0(
-            "misc/",
-            names(met_lung)[i],
-            "-tumor_assignments.qs"))
-        s <- subset(met_lung[[i]], tumor == "stroma") %>%
-            DietSeurat()
-        return(s)
-    })
-
-    names(met_stroma) <- names(met_lung)
-
-} else {
-    # Skip this code if all files are present, otherwise will need to
-    # be run manually to produce the annotation files
-    plots <- lapply(seq_along(met_stroma), function(i) {
-        p1 <- r_dim_plot(met_stroma[[i]], names(met_stroma)[i])
-        p2 <- r_feature_plot(met_stroma[[i]], "cell_scores")
-        p3 <- r_feature_plot(met_stroma[[i]], "COL1A1")
-        p4 <- r_feature_plot(met_stroma[[i]], "MYO1D")
-        tumor_cells <- met_stroma[[i]][[]] %>% filter(tumor == "tumor") %>% rownames()
-        p5 <- DimPlot(met_stroma[[i]], cells.highlight = tumor_cells) +
-            theme(legend.position = "none") +
-            coord_fixed()
-        p6 <- r_dim_plot(met_stroma[[i]], label = TRUE, group.by = "annotations")
-        p <- (p1 | p6 | p2) / (p3 | p4 | p5) +
-            plot_annotation(title = names(met_stroma)[i])
-        return(p)
-    })
-
-    # Code for manual curation. Designed for interactive review of plots.
-    i = 1
-    plots[[i]]
-
-    gt::gt(met_lung[[i]]@meta.data %>%
-        select(annotations, seurat_clusters) %>%
-        group_by(seurat_clusters, annotations) %>%
-        summarise(n = n()) %>%
-        arrange(seurat_clusters, -n))
-
-    # Use this code, changing cluster numbers, to designate tumor cells.
-    met_lung[[i]]$tumor <- "stroma"
-    met_lung[[i]]$tumor[met_lung[[i]]$seurat_clusters == 5] <- "tumor"
-
-    # Check result of tumor designation and save a list of tumor assignments.
-    r_dim_plot(met_lung[[i]], "Tumor vs. Stroma", group.by = "tumor")
-    qs::qsave(met_lung[[i]]$tumor,
-        paste0("misc/", names(met_lung)[i], "-tumor_assignments.qs"))
+    met_lung$met_labels <- qs::qread("misc/human_met_labels.qs")
+    met_stroma <- subset(met_lung, met_labels %in% c("Tumor", "LowQ"), invert = TRUE)
 }
 ```
 
@@ -398,6 +335,7 @@ if(!file.exists("output/rdata/integrated_lungs.qs")) {
     #     JoinLayers()
     nl_lung$id <- nl_lung$sample
     nl_lung$method <- nl_lung$fresh_or_frozen
+    nl_lung$annotation <- nl_lung$
     nl_lung <- subset(nl_lung, cells = sample(Cells(nl_lung), size = 19000))
 
     met_stroma <- merge(met_stroma[[1]], met_stroma[2:length(met_stroma)],
