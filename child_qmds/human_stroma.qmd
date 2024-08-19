@@ -246,7 +246,7 @@ if(!file.exists("output/rdata/met_lungs.qs")) {
 
 NOTE: if tumor cells have not been previously assigned for any of the samples, this script will error out with a message to run that code and create those samples before proceding.
 ```{r}
-if(!file.exists("output/rdata/met_lung_annotated.qs")) {
+if(!file.exists("misc/human_met_labels.qs")) {
     sample_names <- names(met_lung)
     met_lung <- mclapply(seq_along(met_lung), function(s) {
         message(paste("Starting sample", names(met_lung)[s], "..."))
