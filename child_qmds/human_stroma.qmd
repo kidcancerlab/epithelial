@@ -29,28 +29,28 @@ lung_ref$free_annotation <-
             "Nonclassical Monocyte" = "Monocytes",
             "Classical Monocyte" = "Monocytes"))
 
-mets_ref <- qs::qread("~/../lab/GenRef/sc_ref_datasets/human/human_lung_mets/human_lung_met_ref.qs")
+mets_ref <- qs::qread("LungRefs/human_lung_met_ref.qs")
 
 annotate <- function(sobject,
     aggr_ref = TRUE,
     label_type = "label.main",
     ...) {
-        hpca <- celldex::HumanPrimaryCellAtlasData()
-        hpca$label.main <-
-            stringr::str_replace_all(hpca$label.main,
-                c("T_cells" = "T cells",
-                "B_cell" = "B cells",
-                "NK_cell" = "NK cells",
-                "Monocyte" = "Monocytes",
-                "DC" = "Dendritic cells"))
-        huim <- celldex::MonacoImmuneData()
-        ref3 <- GetAssayData(lung_ref)
-        ref <- list(hpca, huim, ref3, mets_ref)
+        # hpca <- celldex::HumanPrimaryCellAtlasData()
+        # hpca$label.main <-
+        #     stringr::str_replace_all(hpca$label.main,
+        #         c("T_cells" = "T cells",
+        #         "B_cell" = "B cells",
+        #         "NK_cell" = "NK cells",
+        #         "Monocyte" = "Monocytes",
+        #         "DC" = "Dendritic cells"))
+        # huim <- celldex::MonacoImmuneData()
+        # ref3 <- GetAssayData(lung_ref)
+        ref <- list(mets_ref)
         labels <- list(
-            hpca[[label_type]],
-            huim[[label_type]],
-            lung_ref$free_annotation,
-            mets_ref$Ann_lvl_2)
+            # hpca[[label_type]],
+            # huim[[label_type]],
+            # lung_ref$free_annotation,
+            mets_ref$label)
         annotation <-
             SingleR::SingleR(test = Seurat::as.SingleCellExperiment(sobject),
                 ref = ref,
@@ -184,10 +184,27 @@ if(!file.exists("output/rdata/met_lungs.qs")) {
     mets_meta2 <- tribble(
         ~file, ~Sample_Name, ~Sample_Source, ~Sample_Type, ~method,
         "../../../ExternalData/alsf/Soragni/SCPCS000522/SCPCL000854_filtered.rds", "SCPCS000522", "ALSF", "Metastasis", "cell",
-        "../../../ExternalData/alsf/Soragni/SCPCS000522/SCPCL000854_filtered.rds", "SCPCS000523", "ALSF", "Metastasis", "cell",
-        "../../../ExternalData/alsf/Soragni/SCPCS000522/SCPCL000854_filtered.rds", "SCPCS000524", "ALSF", "Metastasis", "cell",
-        "../../../ExternalData/alsf/Soragni/SCPCS000522/SCPCL000854_filtered.rds", "SCPCS000525", "ALSF", "Metastasis", "cell",
-        "../../../ExternalData/alsf/Soragni/SCPCS000522/SCPCL000854_filtered.rds", "SCPCS000526", "ALSF", "Metastasis", "cell")
+        "../../../ExternalData/alsf/Soragni/SCPCS000523/SCPCL000855_filtered.rds", "SCPCS000523", "ALSF", "Metastasis", "cell",
+        "../../../ExternalData/alsf/Soragni/SCPCS000524/SCPCL000856_filtered.rds", "SCPCS000524", "ALSF", "Metastasis", "cell",
+        "../../../ExternalData/alsf/Soragni/SCPCS000525/SCPCL000857_filtered.rds", "SCPCS000525", "ALSF", "Metastasis", "cell",
+        "../../../ExternalData/alsf/Soragni/SCPCS000526/SCPCL000858_filtered.rds", "SCPCS000526", "ALSF", "Metastasis", "cell")
+
+    # Create a function to convert Ensembl IDs to gene symbols
+    mapIds_2 <- function(IDs, IDFrom, IDTo) {
+        require(org.Hs.eg.db)
+        idmap <- mapIds(org.Hs.eg.db,
+            keys = IDs,
+            column = IDTo,
+            keytype = IDFrom,
+            multiVals = "first")
+        na_vec <- names(idmap[is.na(idmap) == TRUE])
+        idmap <- idmap[is.na(idmap) == FALSE]
+        idmap_df <- data.frame(
+            "From"=names(idmap),
+            "To"=unlist(unname(idmap)),
+            stringsAsFactors = FALSE)
+        return(list(map=idmap_df, noMap=na_vec))
+    }
 
     met_lung2 <- mclapply(1:nrow(mets_meta2),
         function(m) {
@@ -200,6 +217,17 @@ if(!file.exists("output/rdata/met_lungs.qs")) {
             s$src <- mets_meta2$Sample_Source[m]
             s$type <- mets_meta2$Sample_Type[m]
             s$method <- mets_meta2$method[m]
+            d <- GetAssayData(s, "originalexp")
+            remap <- mapIds_2(rownames(d), "ENSEMBL", "SYMBOL")
+            d <- d[remap$map$From, ]
+            rownames(d) <- left_join(
+                as_tibble(rownames(d)),
+                remap[["map"]],
+                join_by(value == From)) %>%
+                pull(To)
+            s[["RNA"]] <- CreateAssayObject(rowsum(d, row.names(d)))
+            Seurat::DefaultAssay(s) <- "RNA"
+            s[["originalexp"]] <- NULL
             message(paste(mets_meta2$Sample_Name[m], "completed."))
             return(s)
         }, mc.cores = parallelly::availableCores())
@@ -218,20 +246,74 @@ if(!file.exists("output/rdata/met_lungs.qs")) {
 
 NOTE: if tumor cells have not been previously assigned for any of the samples, this script will error out with a message to run that code and create those samples before proceding.
 ```{r}
-# if(!file.exists("output/rdata/met_lung_annotated.qs")) {
-#     met_lung <- mclapply(seq_along(met_lung), function(s) {
-#         message(paste("Starting sample", names(met_lung)[s], "..."))
-#         o <- process_seurat(met_lung[[s]]) %>%
-#             annotate()
-#         message(paste0("Completed" , names(met_lung)[s], "."))
-#         return(o)
-#     }, mc.cores = parallelly::availableCores())
-#     names(met_lung) <- mets_meta$Sample_Name
+if(!file.exists("output/rdata/met_lung_annotated.qs")) {
+    sample_names <- names(met_lung)
+    met_lung <- mclapply(seq_along(met_lung), function(s) {
+        message(paste("Starting sample", names(met_lung)[s], "..."))
+        o <- process_seurat(met_lung[[s]]) %>%
+            annotate()
+        message(paste0("Completed" , names(met_lung)[s], "."))
+        return(o)
+    }, mc.cores = parallelly::availableCores())
+    names(met_lung) <- sample_names
 
-#     qs::qsave(met_lung, "output/rdata/met_lung_annotated.qs")
-# } else {
-#     met_lung <- qs::qread("output/rdata/met_lung_annotated.qs")
-# }
+    met_label <- merge(met_lung[[1]], met_lung[2:length(met_lung)],
+        cell.ids <- names(met_lung)) %>%
+            JoinLayers() %>%
+            NormalizeData() %>%
+            ScaleData() %>%
+            FindVariableFeatures() %>%
+            RunPCA(npcs = 30, verbose = FALSE) %>%
+            harmony::RunHarmony(group.by.vars = c("id", "src", "method")) %>%
+            RunUMAP(reduction = "harmony", dims = 1:30) %>%
+            FindNeighbors(reduction = "harmony", dims = 1:30) %>%
+            FindClusters(resolution = 0.5)
+
+    p1 <- r_dim_plot(met_label, group.by = "seurat_clusters")
+    p2 <- r_dim_plot(met_label, group.by = "annotations", repel = TRUE)
+    p1 + p2
+
+    gt::gt(met_label[[]] %>%
+        select(seurat_clusters, annotations) %>%
+        group_by(seurat_clusters, annotations) %>%
+        tally() %>%
+        arrange(seurat_clusters, -n))
+    
+    met_label <- RenameIdents(met_label,
+        `0` = "Tumor",
+        `1` = "Myeloid",
+        `2` = "T/NK-cell",
+        `3` = "Tumor",
+        `4` = "Endothelial",
+        `5` = "Myeloid",
+        `6` = "Cycling",
+        `7` = "Tumor",
+        `8` = "Tumor",
+        `9` = "Smooth_muscle",
+        `10` = "Myeloid",
+        `11` = "Epithelial",
+        `12` = "B-cell",
+        `13` = "Tumor",
+        `14` = "Myeloid",
+        `15` = "LowQ",
+        `16` = "Myeloid",
+        `17` = "Myeloid",
+        `18` = "Endothelial",
+        `19` = "Myeloid",
+        `20` = "T/NK-cell",
+        `21` = "LowQ")
+
+    r_dim_plot(met_label, "Manual Annotations")
+    met_label$met_labels <- Idents(met_label)
+
+    qs::qsave(met_label$met_labels, "misc/human_met_labels.qs")
+} else {
+    met_lung <- merge(met_lung[[1]], met_lung[2:length(met_lung)],
+        cell.ids <- names(met_lung)) %>%
+            JoinLayers()
+    met_lung$met_labels <- qs$qread("misc/human_met_labels.qs")
+    met_lung <- subset(met_lung, met_labels %in% c("Tumor", "LowQ"), invert = TRUE)
+}
 
 # Check to see if all of the relevant annotation files are present
 file_check <- TRUE
