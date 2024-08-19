@@ -320,27 +320,11 @@ if(!file.exists("misc/human_met_labels.qs")) {
 
 Need to rewrite to make integration conditional on having been previously run***
 ```{r}
-    # Check to see if integrated dataset has already been processed
+# Check to see if integrated dataset has already been processed
 if(!file.exists("output/rdata/integrated_lungs.qs")) {
-    # # Merge the normal and metastatic lung data into a single object
-    # # Downsample the normal lung data
-    # for(i in seq_along(nl_lung)) {
-    #     nl_lung[[i]] <- subset(nl_lung[[i]], downsample = 1000)
-    #     nl_lung[[i]][["RNA"]]$counts <- as(nl_lung[[i]][["RNA"]]$counts,
-    #         Class = "dgCMatrix")
-    #     nl_lung[[i]] <- NormalizeData(nl_lung[[i]])}
-
-    # nl_lung <- merge(nl_lung[[1]], nl_lung[2:length(nl_lung)],
-    #     add.cell.ids = names(nl_lung)) %>%
-    #     JoinLayers()
     nl_lung$id <- nl_lung$sample
     nl_lung$method <- nl_lung$fresh_or_frozen
-    nl_lung$annotation <- nl_lung$
-    nl_lung <- subset(nl_lung, cells = sample(Cells(nl_lung), size = 19000))
-
-    met_stroma <- merge(met_stroma[[1]], met_stroma[2:length(met_stroma)],
-        add.cell.ids = names(met_stroma)) %>%
-        JoinLayers()
+    nl_lung$annotation <- nl_lung$ann_level_2
 
     keep_features <- intersect(rownames(nl_lung), rownames(met_stroma))
 
