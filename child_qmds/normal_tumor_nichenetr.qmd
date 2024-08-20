@@ -340,12 +340,14 @@ holder_list <-
         list(data = slot_4_data)
     )
 
-plot_name <- plot_complex_heatmap(holder_list)
+plot_name <-
+    plot_complex_heatmap(holder_list) +
+    theme(legend.direction = "vertical", legend.box = "horizontal")
 
 ggsave(
     "output/figures/nichenetr/nichenet_heatmap_main.pdf",
     plot_name,
-    width = 6,
+    width = 7,
     height = 5
 )
 ```
