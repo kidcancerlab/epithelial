@@ -226,6 +226,8 @@ nichenet_out <-
 dev.off()
 
 names(nichenet_out) <- all_cell_types
+
+qs::qsave(nichenet_out, "output/rdata/nichenetr_out.qs")
 ```
 
 ## Make complex heatmaps from nichenetr output
