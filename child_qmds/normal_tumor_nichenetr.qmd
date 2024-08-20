@@ -279,42 +279,75 @@ nint_ligands <-
     pull(ligand) %>%
     unique()
 
+slot_1_data <- data.frame(id = character())
+slot_2_data <- data.frame(id = character())
+slot_4_data <- data.frame(y = ordered())
+
+score_cutoff <- 0.2
+
 for (receiver_cell in all_cell_types) {
     if (is.list(nichenet_out[[receiver_cell]])) {
         sub_nichenetr <- nichenet_out[[receiver_cell]]
 
-        sub_nichenetr[[4]]$data <-
-            filter(sub_nichenetr[[4]]$data, x %in% nint_receptors &
-                   y %in% nint_ligands)
+        slot_4_data <-
+            rbind(
+                slot_4_data,
+                filter(sub_nichenetr[[4]]$data, x %in% nint_receptors &
+                       y %in% nint_ligands &
+                       score > score_cutoff) %>%
+                    mutate(x = paste(receiver_cell, x))
+            )
 
         sub_nichenetr[[1]]$data <-
             filter(sub_nichenetr[[1]]$data, features.plot %in% nint_ligands)
 
+        slot_1_data <-
+            rbind(slot_1_data, sub_nichenetr[[1]]$data)
+
         sub_nichenetr[[2]]$data <-
-            filter(sub_nichenetr[[2]]$data, features.plot %in% nint_receptors)
+            filter(sub_nichenetr[[2]]$data, features.plot %in% nint_receptors) %>%
+            mutate(id = "Receptor Expression")
 
-        plot_name <- plot_complex_heatmap(sub_nichenetr)
+        if (nrow(sub_nichenetr[[2]]$data) > 0) {
+            rownames(sub_nichenetr[[2]]$data) <-
+                paste(receiver_cell, rownames(sub_nichenetr[[2]]$data))
 
-        ggsave(
-            paste0("output/figures/nichenetr/nichenet_heatmap_main_",
-                    str_replace(receiver_cell, "/", "_"),
-                    ".pdf"),
-            plot_name,
-            width = 6,
-            height = 8
-        )
-        qs::qsave(
-            plot_name,
-            paste0(
-                "output/figures/nichenetr/nichenet_heatmap_main_",
-                str_replace(receiver_cell, "/", "_"),
-                ".qs"
-            )
-        )
+            slot_2_data <-
+                rbind(
+                    slot_2_data,
+                    mutate(
+                        sub_nichenetr[[2]]$data,
+                        features.plot = paste(receiver_cell, features.plot)
+                    )
+                )
+        }
+
     } else {
         print(paste(receiver_cell, "-", nichenet_out[[receiver_cell]]))
     }
 }
+
+# Pf4 had really low scores (~0.02) and was filtered out of slot_4_data, but not
+# from slot_1_data, so we're doing it here
+slot_1_data <-
+    filter(slot_1_data,
+           features.plot %in% slot_4_data$y)
+holder_list <-
+    list(
+        list(data = slot_1_data),
+        list(data = slot_2_data),
+        NULL,
+        list(data = slot_4_data)
+    )
+
+plot_name <- plot_complex_heatmap(holder_list)
+
+ggsave(
+    "output/figures/nichenetr/nichenet_heatmap_main.pdf",
+    plot_name,
+    width = 6,
+    height = 5
+)
 ```
 
 
