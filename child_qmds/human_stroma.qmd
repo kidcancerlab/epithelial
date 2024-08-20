@@ -324,7 +324,7 @@ Need to rewrite to make integration conditional on having been previously run***
 if(!file.exists("output/rdata/integrated_lungs.qs")) {
     nl_lung$id <- nl_lung$sample
     nl_lung$method <- nl_lung$fresh_or_frozen
-    nl_lung$annotation <- nl_lung$ann_level_2
+    nl_lung$annotations <- nl_lung$ann_level_2
 
     keep_features <- intersect(rownames(nl_lung), rownames(met_stroma))
 
@@ -340,12 +340,9 @@ if(!file.exists("output/rdata/integrated_lungs.qs")) {
         harmony::RunHarmony(group.by.vars = c("id")) %>%
         RunUMAP(reduction = "harmony", dims = 1:30) %>%
         FindNeighbors(reduction = "harmony", dims = 1:30) %>%
-        FindClusters(resolution = 0.2)
-
-    lungs <- annotate(lungs)
+        FindClusters(resolution = 0.5)
 
     qs::qsave(lungs, "output/rdata/integrated_lungs.qs")
-
 } else {
     lungs <- qs::qread("output/rdata/integrated_lungs.qs")
 }
@@ -357,7 +354,8 @@ p1 <- r_dim_plot(subset(lungs, type == "Healthy"),
 p2 <- r_dim_plot(subset(lungs, type == "Metastasis"),
     group.by = "annotations",
     repel = TRUE,
-    shuffle = TRUE)
+    shuffle = TRUE,
+    label.box = TRUE)
 p3 <- r_dim_plot(lungs, "Integrated Stroma")
 p3 | p1 | p2
 
@@ -366,31 +364,39 @@ r_dim_plot(lungs, split.by = "type", group.by = "cell_type", repel = TRUE)
 # Perform a semi-automated, manually verified cell type assignment
 # ***This needs to be redone since re-building the healthy lung reference
 if(!file.exists("misc/lungs_manual_assignment.qs")) {
+    r_dim_plot(lungs, split.by = "type")
+    
+    gt::gt(lungs[[]] %>%
+        select(seurat_clusters, annotations) %>%
+        group_by(seurat_clusters, annotations) %>%
+        tally() %>%
+        arrange(seurat_clusters, -n))
 
     lungs <- RenameIdents(lungs,
-        `0` = "Fibroblast",
-        `1` = "T/NK cell",
-        `2` = "Myeloid",
-        `3` = "Alveolar epithelium",
-        `4` = "Myeloid",
-        `5` = "Endothelial",
-        `6` = "T/NK cell",
-        `7` = "Alveolar epithelium",
-        `8` = "Stem/Proliferating",
-        `9` = "Stem/Proliferating",
-        `10` = "Smooth Muscle",
-        `11` = "Airway epithelium",
-        `12` = "Granulocyte",
-        `13` = "Airway epithelium",
-        `14` = "B cell",
-        `15` = "Alveolar epithelium",
-        `16` = "Endothelial",
-        `17` = "Myeloid",
-        `18` = "Alveolar epithelium",
-        `19` = "Fibroblast",
-        `20` = "Fibroblast",
+        `0` = "Myeloid",
+        `1` = "Airway epithelial",
+        `2` = "Airway epithelial",
+        `3` = "Osteosarcoma",
+        `4` = "Endothelial",
+        `5` = "Lymphoid",
+        `6` = "Lymphoid",
+        `7` = "Osteosarcoma",
+        `8` = "Alveolar epithelial",
+        `9` = "Cycling",
+        `10` = "Fibroblast",
+        `11` = "Smooth muscle",
+        `12` = "Airway epithelial",
+        `13` = "Smooth muscle",
+        `14` = "Myeloid",
+        `15` = "Lymphoid",
+        `16` = "Osteosarcoma",
+        `17` = "Endothelial",
+        `18` = "Myeloid",
+        `19` = "Myeloid",
+        `20` = "Myeloid",
         `21` = "Myeloid",
-        `22` = "Alveolar epithelium")
+        `22` = "Osteosarcoma",
+        `23` = "Osteosarcoma")
 
     lungs$manual_assignments <- Idents(lungs)
     Idents(lungs) <- lungs$seurat_clusters
@@ -401,10 +407,31 @@ if(!file.exists("misc/lungs_manual_assignment.qs")) {
     lungs$manual_assignments <- qs::qread("misc/lungs_manual_assignment.qs")
 }
 
-p3 <- r_dim_plot(lungs, "Manual Assignments", group.by = "manual_assignments")
-p3 | p1 | p2
+# Clean up the carry over and reprocess
+lungs <- subset(lungs, manual_assignments %in% c("Osteosarcoma"), invert = TRUE)
 
-r_dim_plot(lungs, "Manual Assignments", group.by = "manual_assignments", split.by = "type")
+lungs$method[lungs$method == "fresh"] <- "cell"
+lungs$method[lungs$method == "frozen"] <- "nucleus"
+
+lungs[["RNA"]]$scale.data <- NULL
+lungs[["RNA"]]$scale.data.1 <- NULL
+
+lungs <- DietSeurat(lungs) %>%
+    ScaleData() %>%
+    FindVariableFeatures() %>%
+    RunPCA(npcs = 30, verbose = FALSE) %>%
+    harmony::RunHarmony(group.by.vars = c("id")) %>%
+    RunUMAP(reduction = "harmony", dims = 1:30) %>%
+    FindNeighbors(reduction = "harmony", dims = 1:30) %>%
+    FindClusters(resolution = 0.5)
+
+r_dim_plot(lungs, "Manual Assignments", group.by = "manual_assignments", split.by = "type", label.box = TRUE, repel = TRUE)
+
+
+
+
+
+
 ```
 
 # Subcluster epithelial cells
