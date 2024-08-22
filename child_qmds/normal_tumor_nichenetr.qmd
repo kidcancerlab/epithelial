@@ -266,7 +266,10 @@ nint_receptors <-
         "Src",
         "Flt1", # VEGFR1
         "Kdr", # VEGFR2
-        "Flt4" # VEGFR3
+        "Flt4", # VEGFR3
+        "Flt3",
+        "Lck",
+        "Lyn"
     )
 
 nint_ligands <-
@@ -356,16 +359,6 @@ ggsave(
 Do the same thing with Cabo samples?
 
 ```{r}
-nint_receptors <-
-    c(
-        "Fgfr1", "Fgfr2", "Fgfr3", "Fgfr4",
-        "Pdgfra", "Pdgfrb",
-        "Src",
-        "Flt1", # VEGFR1
-        "Kdr", # VEGFR2
-        "Flt4" # VEGFR3
-    )
-
 ligand_receptors <-
     rrrSingleCellUtils:::rrr_env$lr_network_strict %>%
     mutate(from = nichenetr::convert_human_to_mouse_symbols(from),
@@ -552,6 +545,9 @@ VlnPlot(
 ) +
     theme(legend.position = "top")
 
+set.seed(1337)
+gene_lists$random_genes <- sample(rownames(epi_myeloid_data), 30)
+
 test <-
     AUCell::AUCell_run(GetAssayData(epi_myeloid_data), gene_lists) %>%
     AUCell::getAUC() %>%
@@ -612,5 +608,12 @@ qs::qsave(
 )
 
 FeaturePlot(epi_myeloid_data, features = c("Fgf1_downstream", "Vegfa_downstream"))
+```
+
+```{r}
+for (pathway_name in names(gene_lists)) {
+
+}
+
 ```
 
