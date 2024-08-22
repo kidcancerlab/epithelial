@@ -610,10 +610,71 @@ qs::qsave(
 FeaturePlot(epi_myeloid_data, features = c("Fgf1_downstream", "Vegfa_downstream"))
 ```
 
+## Try doing statistical analysis on the AUCell data
 ```{r}
-for (pathway_name in names(gene_lists)) {
+anova_pval_df <-
+    data.frame(
+        matrix(
+            rep(
+                NA,
+                length(gene_lists) *
+                    length(unique(epi_myeloid_data$coarse_cell_type))
+            ),
+            ncol = length(gene_lists)
+        )
+    )
+colnames(anova_pval_df) <- names(gene_lists)
+rownames(anova_pval_df) <- unique(epi_myeloid_data$coarse_cell_type)
 
+for (downstream_targets in names(gene_lists)) {
+    for (cell_type in unique(epi_myeloid_data$coarse_cell_type)) {
+        sub_data <- subset(epi_myeloid_data, coarse_cell_type == cell_type)
+        anova_pval <-
+            (
+                aov(
+                    lm(unlist(sub_data[[downstream_targets]]) ~ sub_data$treatment)
+                ) %>%
+                summary()
+            )[[1]][1, 5]
+        anova_pval_df[cell_type, downstream_targets] <- anova_pval
+    }
 }
 
-```
+# Bonferroni correction
+temp <-
+    p.adjust(as.matrix(anova_pval_df)) %>%
+    matrix(ncol = length(gene_lists)) %>%
+    -log10(.) %>%
+    as.data.frame()
+colnames(temp) <- colnames(anova_pval_df)
+rownames(temp) <- rownames(anova_pval_df)
 
+write_tsv(temp, "output/tables/nichenetr/anova_neg_log10_pvals.tsv")
+
+temp %>%
+    rownames_to_column("cell_type") %>%
+    pivot_longer(-cell_type, names_to = "pathway", values_to = "padj") %>%
+    mutate(signif = ifelse(
+        padj < -log10(0.05),
+        "Not significant",
+        "Significant"
+    )) %>%
+    ggplot(
+        aes(
+            x = pathway,
+            y = cell_type,
+            fill = padj,
+            color = signif
+            )) +
+    geom_tile(height = 0.9, width = 0.9) +
+    geom_text(aes(label = round(padj, 2))) +
+    scale_fill_gradient(low = "white", high = "red") +
+    scale_color_manual(values = c("gray", "black")) +
+    labs(
+        title = "AUCell pathway enrichment ANOVA p-values",
+        x = "",
+        y = ""
+    ) +
+    theme(plot.title = element_text(hjust = 0.5))
+
+```
