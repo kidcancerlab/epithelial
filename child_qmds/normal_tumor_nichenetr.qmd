@@ -493,7 +493,6 @@ epi_myeloid_data <-
         james_tams,
         list(james_epi, non_james_cells)
     ) %>%
-    #subset(treatment != "Early Nintedanib") %>%
     process_seurat() %>%
     AddModuleScore(
         features = gene_lists,
@@ -548,13 +547,13 @@ VlnPlot(
 set.seed(1337)
 gene_lists$random_genes <- sample(rownames(epi_myeloid_data), 30)
 
-test <-
+aucell_out <-
     AUCell::AUCell_run(GetAssayData(epi_myeloid_data), gene_lists) %>%
     AUCell::getAUC() %>%
     as.data.frame() %>%
     t()
 
-epi_myeloid_data <- AddMetaData(epi_myeloid_data, test)
+epi_myeloid_data <- AddMetaData(epi_myeloid_data, aucell_out)
 
 plot_name <-
     VlnPlot(
@@ -563,7 +562,8 @@ plot_name <-
             "Fgf1_downstream",
             "Vegfa_downstream",
             "Pdgfa_downstream",
-            "Pdgfb_downstream"),
+            "Pdgfb_downstream",
+            "random_genes"),
         split.by = "treatment",
         group.by = "coarse_cell_type",
         ncol = 1
@@ -651,7 +651,8 @@ rownames(temp) <- rownames(anova_pval_df)
 
 write_tsv(temp, "output/tables/nichenetr/anova_neg_log10_pvals.tsv")
 
-temp %>%
+plot_name <-
+    temp %>%
     rownames_to_column("cell_type") %>%
     pivot_longer(-cell_type, names_to = "pathway", values_to = "padj") %>%
     mutate(signif = ifelse(
@@ -676,5 +677,12 @@ temp %>%
         y = ""
     ) +
     theme(plot.title = element_text(hjust = 0.5))
+ggsave(
+    "output/figures/nichenetr/anova_neg_log10_pvals.pdf",
+    plot_name,
+    width = 15,
+    height = 10
+)
+qs::qsave(plot_name, "output/figures/nichenetr/anova_neg_log10_pvals.qs")
 
 ```
