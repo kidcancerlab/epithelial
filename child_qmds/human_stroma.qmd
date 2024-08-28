@@ -311,6 +311,7 @@ if(!file.exists("misc/human_met_labels.qs")) {
     met_lung <- merge(met_lung[[1]], met_lung[2:length(met_lung)],
         cell.ids <- names(met_lung)) %>%
             JoinLayers()
+    met_lung <- subset(met_lung, cells = names(qs::qread("misc/human_met_labels.qs")))
     met_lung$met_labels <- qs::qread("misc/human_met_labels.qs")
     met_stroma <- subset(met_lung, met_labels %in% c("Tumor", "LowQ"), invert = TRUE)
 }
@@ -322,9 +323,12 @@ Need to rewrite to make integration conditional on having been previously run***
 ```{r}
 # Check to see if integrated dataset has already been processed
 if(!file.exists("output/rdata/integrated_lungs.qs")) {
+    nl_lung <- subset(nl_lung, tissue == "lung parenchyma")
     nl_lung$id <- nl_lung$sample
     nl_lung$method <- nl_lung$fresh_or_frozen
     nl_lung$annotations <- nl_lung$ann_level_2
+
+    met_stroma$annotations <- met_stroma$met_labels
 
     keep_features <- intersect(rownames(nl_lung), rownames(met_stroma))
 
@@ -352,10 +356,9 @@ p1 <- r_dim_plot(subset(lungs, type == "Healthy"),
     repel = TRUE,
     shuffle = TRUE)
 p2 <- r_dim_plot(subset(lungs, type == "Metastasis"),
-    group.by = "annotations",
+    group.by = "met_labels",
     repel = TRUE,
-    shuffle = TRUE,
-    label.box = TRUE)
+    shuffle = TRUE)
 p3 <- r_dim_plot(lungs, "Integrated Stroma")
 p3 | p1 | p2
 
@@ -425,21 +428,85 @@ lungs <- DietSeurat(lungs) %>%
     FindNeighbors(reduction = "harmony", dims = 1:30) %>%
     FindClusters(resolution = 0.5)
 
-r_dim_plot(lungs, "Manual Assignments", group.by = "manual_assignments", split.by = "type", label.box = TRUE, repel = TRUE)
+p1 <- r_dim_plot(lungs,
+    group.by = "seurat_clusters",
+    repel = TRUE,
+    label.box = TRUE)
+p2 <- r_dim_plot(subset(lungs, type == "Healthy"),
+    group.by = "ann_level_3", 
+    repel = TRUE,
+    label.box = TRUE)
+p3 <- r_dim_plot(subset(lungs, type == "Metastasis"),
+    group.by = "met_labels", 
+    repel = TRUE)
+p4 <- r_dim_plot(lungs,
+    group.by = "manual_assignments", 
+    repel = TRUE,
+    label.box = TRUE)
+(p1 + p2) / (p4 + p3)
 
+# Refine the cell type calls so that the final figure looks pretty
+if(!file.exists("misc/human_mets_stroma_assignments.qs")) {
+    lungs <- kill_cc(lungs)
+    Idents(lungs) <- lungs$seurat_clusters
+    
+    lungs_marks_2 <- FindAllMarkers(lungs)
+    
+    gt::gt(lungs_marks_2 %>%
+        group_by(cluster) %>%
+        filter(pct.1 > 0.5) %>%
+        slice_max(avg_log2FC, n = 20) %>%
+        arrange(cluster, -avg_log2FC)) %>%
+        gt::tab_header("DEGs by cluster")
 
+    lungs <- RenameIdents(lungs,
+        `0` = "Myeloid",
+        `1` = "T/NK Cell",
+        `2` = "Endothelial",
+        `3` = "T/NK Cell",
+        `4` = "Epithelial",
+        `5` = "T/NK Cell",
+        `6` = "Smooth Muscle", # Possible entanglement of tumor cells
+        `7` = "Fibroblast", # Possible entaglement of tumor cells
+        `8` = "Myeloid",
+        `9` = "Tumor", # Cycling heavily, otherwise not matching
+        `10` = "Tumor", # Cycling heavily, otherwise not matching
+        `11` = "B Cell",
+        `12` = "Myeloid",
+        `13` = "Myeloid",
+        `14` = "Tumor", # Matches OS markers very clearly
+        `15` = "Endothelial",
+        `16` = "Epithelial",
+        `17` = "Endothelial",
+        `18` = "Myeloid",
+        `19` = "Epithelial",
+        `20` = "Myeloid",
+        `21` = "Myeloid",
+        `22` = "Tumor") # Cycling heavily, otherwise not matching
 
+    qs::qsave(Idents(lungs), "misc/human_mets_stroma_assignments.qs")
+    lungs$manual_assignments_v2 <- Idents(lungs)    
+    Idents(lungs) <- lungs$seurat_clusters
+} else {
+    lungs$manual_assignments_v2 <- qs::qread("misc/human_mets_stroma_assignments.qs")
+}
 
+lungs <- subset(lungs, manual_assignments_v2 != "Tumor")
 
+# Filter to even sample size for presentation
+h_cells <- Cells(lungs)[which(lungs$type == "Healthy")]
+m_cells <- Cells(lungs)[which(lungs$type == "Metastasis")] %>%
+    sample(size = length(h_cells))
+lungs_2 <- subset(lungs, cells = c(h_cells, m_cells))
 
+r_dim_plot(lungs_2, group.by = "manual_assignments_v2", split.by = "type")
 ```
 
 # Subcluster epithelial cells
 
 ```{r}
 if(!file.exists("output/rdata/human_epithelial.qs")) {
-    epi <- subset(lungs, manual_assignments == c(
-        "Alveolar epithelium", "Stem/Proliferating"))
+    epi <- subset(lungs, manual_assignments_v2 == "Epithelial")
 
     # Reprocess the subsetted cells
     epi <- DietSeurat(epi, assays = "RNA") %>%
@@ -452,10 +519,7 @@ if(!file.exists("output/rdata/human_epithelial.qs")) {
         FindNeighbors(reduction = "harmony", dims = 1:20) %>%
         FindClusters(resolution = 0.3)
     
-    r_dim_plot(epi, group.by = "type")
-
-    epi <- run_fdl(epi)
-    r_dim_plot(epi, reduction = "fdl")
+    r_dim_plot(epi, split.by = "type")
 
     p1 <- r_dim_plot(subset(epi, type == "Healthy"),
         group.by = "cell_type",
@@ -468,40 +532,30 @@ if(!file.exists("output/rdata/human_epithelial.qs")) {
     p3 <- r_dim_plot(epi, "Integrated epithelial")
     p3 | p1 | p2
 
-    # epi[[]] %>%
-    #     select(seurat_clusters, cell_type) %>%
-    #     group_by(seurat_clusters, cell_type) %>%
-    #     summarize(n = n())
-    
+    epi_marks <- FindAllMarkers(epi)
+
+    gt::gt(epi_marks %>%
+        group_by(cluster) %>%
+        filter(pct.1 > 0.5) %>%
+        slice_max(avg_log2FC, n = 20) %>%
+        arrange(cluster, -avg_log2FC)) %>%
+        gt::tab_header("DEGs in human AECs (by cluster)")
+
     epi <- subset(epi,
-        idents = c(2, 3, 6),
+        idents = c(4, # Clearly a cluster of ciliated epithelium
+            6, # A cluster of leak-through goblet cells
+            7), # A cluster of leak-through myeloid cells
         invert = TRUE)
-
-    # Normalize the numbers of cells between normal and mets
-    ncells <- min(table(epi$type))
-    epi <- SplitObject(epi, split.by = "type")
-
-    for(t in names(epi)) {
-        epi[[t]] <- subset(epi[[t]], cells = sample(colnames(epi[[t]]), size = ncells))
-    }
-
-    epi <- merge(epi[[1]], epi[[2]]) %>%
-        JoinLayers()
 
     # Reprocess the subsetted cells
     epi <- DietSeurat(epi, assays = "RNA") %>%
         FindVariableFeatures() %>%
         ScaleData() %>%
         RunPCA(npcs = 20, verbose = FALSE) %>%
-        harmony::RunHarmony(group.by.vars = c("type")) %>%
+        harmony::RunHarmony(group.by.vars = c("type", "id", "method")) %>%
         RunUMAP(reduction = "harmony", dims = 1:20) %>%
         FindNeighbors(reduction = "umap", dims = 1:2) %>%
-        FindClusters(resolution = 0.1)
-
-    p1 <- r_dim_plot(epi)
-    p2 <- r_dim_plot(epi, group.by = "cell_type", repel = TRUE) +
-        theme(legend.position = "right")
-    p1 | p2
+        FindClusters(resolution = 0.5)
 
     r_dim_plot(epi, split.by = "type")
 
@@ -510,48 +564,34 @@ if(!file.exists("output/rdata/human_epithelial.qs")) {
 
     gt::gt(epi_marks %>%
         group_by(cluster) %>%
+        filter(pct.1 > 0.5) %>%
         slice_max(avg_log2FC, n = 20) %>%
         arrange(cluster, -avg_log2FC)) %>%
         gt::tab_header("DEGs in human AECs (by cluster)")
 
-    epi <- kill_cc(epi)
-    Idents(epi) <- epi$seurat_clusters
+    # Clean out clear osteosarcoma contamination
+    # (top genes SATB2, COL1A1, RUNX2)
+    epi <- subset(epi, idents = c(13, 15, 16, 17, 18, 19), invert = TRUE)
 
-    r_dim_plot(epi, group.by = "type")
-    r_dim_plot(epi, group.by = "cell_type")
-    r_dim_plot(epi)
+    # Reprocess
+    epi <- DietSeurat(epi, assays = "RNA") %>%
+        FindVariableFeatures() %>%
+        ScaleData() %>%
+        RunPCA(npcs = 20, verbose = FALSE) %>%
+        harmony::RunHarmony(group.by.vars = c("type", "id", "method")) %>%
+        RunUMAP(reduction = "harmony", dims = 1:20) %>%
+        FindNeighbors(reduction = "umap", dims = 1:2) %>%
+        FindClusters(resolution = 0.5)
+
+    r_dim_plot(epi, split.by = "type")
+
+    epi <- run_fdl(epi)
+    r_dim_plot(epi, reduction = "fdl", split.by = "type")
 
     qs::qsave(epi, "output/rdata/human_epithelial.qs")
 } else {
     epi <- qs::qread("output/rdata/human_epithelial.qs")
 }
-
-p1 <- r_dim_plot(epi, "Distal Airway - Cell Cycle",
-    group.by = "Phase", label = FALSE) +
-    ggtitle("Distal Airway - Phase") +
-    theme(legend.position = "right")
-p2 <- r_dim_plot(epi,
-    group.by = "seurat_clusters",
-    split.by = "type")
-p3 <- r_feature_plot(epi, "AREG", min.cutoff = 2)
-p4 <- r_feature_plot(epi, "KRT17", max.cutoff = 3)
-p5 <- r_feature_plot(epi, "SFTPC", min.cutoff = 5)
-p6 <- r_feature_plot(epi, "AGER", min.cutoff = 2)
-(p1 | p2) / (p5 | p6 | p4 | p3)
-
-# Show genes from the basaloid signature identified in:
-# https://doi.org/10.1038/s41467-022-33193-0
-# https://doi.org/10.1038/s41467-020-17358-3
-# https://doi.org/10.1126/sciadv.aba1983
-r_feature_plot(epi, "FOSL1", split.by = "type")
-r_feature_plot(epi, "CD24", split.by = "type")
-r_feature_plot(epi, "ITGB8", split.by = "type")
-
-# Show markers of activated AEC2
-r_feature_plot(epi, "AREG", split.by = "type")
-r_feature_plot(epi, "TP63", min.cutoff = 1, split.by = "type")
-r_feature_plot(epi, "KRT5", split.by = "type")
-
 # Perform a global assessment of DEG
 epi_marks <- FindAllMarkers(epi)
 
@@ -562,20 +602,36 @@ gt::gt(epi_marks %>%
     arrange(cluster, -avg_log2FC)) %>%
     gt::tab_header("DEGs in human AECs (by cluster)")
 
+# Show genes from the basaloid signature identified in:
+# https://doi.org/10.1038/s41467-022-33193-0
+# https://doi.org/10.1038/s41467-020-17358-3
+# https://doi.org/10.1126/sciadv.aba1983
+r_feature_plot(epi, "FOSL1", split.by = "type")
+r_feature_plot(epi, "CD24", split.by = "type")
+r_feature_plot(epi, "ITGB8", split.by = "type")
+r_feature_plot(epi, "KRT17", split.by = "type")
+
+# Show markers of activated AEC2
+r_feature_plot(epi, "AREG", split.by = "type")
+r_feature_plot(epi, "TP63", min.cutoff = 1, split.by = "type")
+r_feature_plot(epi, "KRT5", split.by = "type")
+
 # Assign cell types
 epi2 <- RenameIdents(epi,
-    `0` = "0",
-    `1` = "",
-    `2` = "",
-    `3` = "3",
-    `4` = "Basaloid",
+    `0` = "Basaloid",
+    `1` = "AEC2",
+    `2` = "AEC2",
+    `3` = "AEC2",
+    `4` = "AEC2",
     `5` = "Basaloid",
-    `6` = "",
-    `7` = "7",
-    `8` = "",
-    `9` = "9",
-    `10` = "cAEC2",
-    `11` = "cAEC2")
+    `6` = "AEC2",
+    `7` = "AEC1",
+    `8` = "AEC2",
+    `9` = "AEC2",
+    `10` = "AEC1",
+    `11` = "Basaloid",
+    `12` = "Basaloid",
+    `13` = "cAEC2")
 
 epi2$epi_type <- Idents(epi2)
 
@@ -588,10 +644,10 @@ epi_genes <- c(
     "SFTPA1", "SFTPC", "PGC", # AEC2
     "AREG", "PIGR", # pAEC2
     "TOP2A", "MKI67", "CENPF", # cAEC2
-    "KRT17", "CDH2", "LAMB3", "FN1", "TP63", "LAMC2", # Basaloid
+    "KRT17", "TNC", "CDH2", "FN1", "TP63",  # Basaloid
     "AGER", "CAV1", "RTKN2") # AEC1
 
-epi2$epi_type <- factor(epi2$epi_type, levels = c("AEC1", "Basaloid", "cAEC2", "pAEC2", "AEC2", 0:12))
+epi2$epi_type <- factor(epi2$epi_type, levels = c("AEC1", "Basaloid", "cAEC2", "pAEC2", "AEC2", 0:20))
 
 DotPlot(epi2,
     features = epi_genes,
