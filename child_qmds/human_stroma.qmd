@@ -687,40 +687,44 @@ if(!file.exists(output/rdata/human_macs.qs)) {
         label.box = TRUE)
     p1 + p2 + p3
 
-    r_dim_plot(subset(macs, subset = type == "Metastasis"),
-        group.by = "annotations",
-        repel = TRUE) +
-        theme(legend.position = "right")
+    # Identify clusters by DEGs
+    mac_marks <- FindAllMarkers(macs)
 
-    # Check the odd clusters 3 and 10
-    head(FindMarkers(macs,
-        ident.1 = "3",
-        only.pos = TRUE) %>%
-        filter(pct.1 > 0.4) %>%
-        arrange(-avg_log2FC),
-        n = 30)
-    head(FindMarkers(macs,
-        ident.1 = "10",
-        only.pos = TRUE) %>%
-        filter(pct.1 > 0.4) %>%
-        arrange(-avg_log2FC),
-        n = 30)
+    gt::gt(mac_marks %>%
+        group_by(cluster) %>%
+        filter(pct.1 > 0.5) %>%
+        slice_max(avg_log2FC, n = 20) %>%
+        arrange(cluster, -avg_log2FC)) %>%
+        gt::tab_header("DEGs in human macrophages (by cluster)")
 
-    # Remove these tumor cells
-    macs <- subset(macs, idents = c("3", "10"), invert = TRUE)
+    # Remove contaminating cells
+    macs <- subset(macs, 
+        idents = c(
+            # "1", # Alveolar Macs
+            "8", # T cells
+            "13"), # Mast cells
+        invert = TRUE)
 
     # Redo the UMAP
     macs <- FindVariableFeatures(macs) %>%
         ScaleData() %>%
         RunPCA(npcs = 30, verbose = FALSE) %>%
         harmony::RunHarmony(
-            group.by.vars = c("id", "method"),
-            lambda = c(0.8, 0.8)) %>%
+            group.by.vars = c("id", "method")) %>%
         RunUMAP(reduction = "harmony", dims = 1:30) %>%
-        FindNeighbors(reduction = "harmony") %>%
-        FindClusters(resolution = 0.4)
+        FindNeighbors(reduction = "harmony", k.param = 10) %>%
+        FindClusters(resolution = 0.5)
 
+    macs <- run_fdl(macs)
+
+    # test <- mclapply(c(5, 10, 20, 50), function(k) {
+    #     o <- FindNeighbors(macs, reduction = "harmony", k.param = k) %>% run_fdl()
+    #     return(r_dim_plot(o, reduction = "fdl", repel = TRUE, label.box = TRUE))
+    # }, mc.cores = parallelly::availableCores())
+    # wrap_plots(test, ncol = 2)
+    
     r_dim_plot(macs, split.by = "type", repel = TRUE)
+    r_dim_plot(macs, split.by = "type", reduction = "fdl", repel = TRUE, label.box = TRUE)
 
     r_feature_plot(macs, "MARCO", split.by = "type")
     r_feature_plot(macs, "CD68", split.by = "type")
@@ -736,100 +740,61 @@ if(!file.exists(output/rdata/human_macs.qs)) {
 
     gt::gt(macs_marks %>%
         group_by(cluster) %>%
-        filter(pct.1 > 0.4) %>%
+        filter(pct.1 > 0.5) %>%
         slice_max(avg_log2FC, n = 20) %>%
         arrange(cluster, -avg_log2FC)) %>%
         gt::tab_header("DEGs in human mononuclear cells (by cluster)")
 
-    # Clean up the macrophage data (non-myeloid cells)
-    # Lots of contaminating tumor cells and alveolar macs, filter out
-    macs <- subset(macs, idents = c(
-        "3", # Tumor
-        "0"), # Alveolar macs
-        invert = TRUE)
-
-    macs <- ScaleData(macs) %>%
-        RunPCA(npcs = 30, verbose = FALSE) %>%
-        harmony::RunHarmony(
-            group.by.vars = c("id", "method"),
-            lambda = c(0.5, 0.5)) %>%
-        RunUMAP(reduction = "harmony", dims = 1:30) %>%
-        FindNeighbors(reduction = "umap", dims = 1:2) %>%
-        FindClusters(resolution = 0.2)
-
-    r_dim_plot(macs, split.by = "type")
-
-    macs_marks <- FindAllMarkers(macs)
-
-    gt::gt(macs_marks %>%
-        group_by(cluster) %>%
-        filter(pct.1 > 0.4) %>%
-        slice_max(avg_log2FC, n = 20) %>%
-        arrange(cluster, -avg_log2FC)) %>%
-        gt::tab_header("DEGs in human mononuclear cells (by cluster)")
-
-    # One last cleanup
-    macs <- subset(macs, idents = c(
-        "10", # Alveolar Macs
-        "13", # Plasmacytoid DCs
-        "8"), # Plasmacytoid DCs
-        invert = TRUE)
-
-    # These papers were helpful for identifying cell types:
-    # https://doi.org/10.1002%2Fctm2.1199
-    # https://doi.org/10.4049/jimmunol.2100094
-    # https://doi.org/10.1038/s41590-023-01468-3
-    # https://doi.org/10.1126%2Fscience.aah4573
-    macs2 <- RenameIdents(macs,
-        "0" = "TAMs",
-        "1" = "Lipid-associated",
-        "2" = "Scar-Macs",
-        "3" = "cMonocyte",
-        "4" = "DC2",
-        "5" = "Inflammatory",
-        "6" = "Cycling",
-        "7" = "ncMonocyte",
-        "9" = "ncMonocyte",
-        "11" = "TIMs",
-        "12" = "IFN-TAMs",
-        "14" = "TIMs",
-        "15" = "TIMs",
-        "16" = "DC2",
-        "17" = "DC1",
-        "18" = "DC3",
-        "19" = "DC2",
-        "20" = "Interstitial",
-        "21" = "DC2",
-        "22" = "Interstitial")
-
-    macs2$macs_assignment <- factor(Idents(macs2), levels = c(
-        "Scar-Macs",
-        "Lipid-associated",
-        "TAMs",
-        "IFN-TAMs",
-        "Inflammatory",
-        "Interstitial",
-        "TIMs",
-        "Cycling",
-        "ncMonocyte",
-        "cMonocyte",
-        "Pre-DC",
-        "DC1",
-        "DC2",
-        "DC3",
-        0:25))
-
-    r_dim_plot(macs2,
-        split.by = "type",
-        group.by = "macs_assignment",
-        repel = TRUE)
-
-    qs::qsave(macs2, "output/rdata/human_macs.qs")
+    qs::qsave(macs, "output/rdata/human_macs.qs")
 } else {
-    macs2 <- qs::qread("output/rdata/human_macs.qs")
+    macs <- qs::qread("output/rdata/human_macs.qs")
 }
 
-r_dim_plot(macs2, split.by = "type", repel = TRUE)
+# These papers were helpful for identifying cell types:
+# https://doi.org/10.1002%2Fctm2.1199
+# https://doi.org/10.4049/jimmunol.2100094
+# https://doi.org/10.1038/s41590-023-01468-3
+# https://doi.org/10.1126%2Fscience.aah4573
+macs2 <- RenameIdents(macs,
+    "0" = "0",
+    "1" = "1",
+    "2" = "2",
+    "3" = "3",
+    "4" = "4",
+    "5" = "5",
+    "6" = "6",
+    "7" = "7",
+    "8" = "8",
+    "9" = "9",
+    "10" = "10",
+    "11" = "11",
+    "12" = "12",
+    "13" = "13",
+    "14" = "14",
+    "15" = "15",
+    "16" = "16")
+
+macs2$macs_assignment <- factor(Idents(macs2), levels = c(
+    "Scar-Macs",
+    "Lipid-associated",
+    "TAMs",
+    "IFN-TAMs",
+    "Inflammatory",
+    "Interstitial",
+    "TIMs",
+    "Cycling",
+    "ncMonocyte",
+    "cMonocyte",
+    "Pre-DC",
+    "DC1",
+    "DC2",
+    "DC3",
+    0:25))
+
+r_dim_plot(macs2,
+    split.by = "type",
+    group.by = "macs_assignment",
+    repel = TRUE)
 
 mac_features <- c(
     "TREM2", "CD9", "SPP1", "GPNMB", # Scar-Macs
@@ -838,6 +803,7 @@ mac_features <- c(
     "IFIT2", "IFIT3", # IFN-TAMS
     "IL1B", "CXCL8", # Inflammatory
     "LYVE1", "SELENOP", # Interstitial
+    "MARCO", "TREM1", # Alveolar-Macs
     "SPARC", "CLEC11A", # TIMs
     "MKI67", "TOP2A", # Cycling
     "IFITM1", "IFITM2", # ncMonocyte
@@ -855,9 +821,4 @@ DotPlot(macs2,
     scale_y_discrete(limits = rev) +
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
     coord_fixed()
-
-r_dim_plot(macs2,
-    split.by = "type",
-    group.by = "seurat_clusters",
-    repel = TRUE)
 ```
