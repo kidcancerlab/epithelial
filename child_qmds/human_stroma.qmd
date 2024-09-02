@@ -865,11 +865,12 @@ r_dim_plot(macs,
 
 macs2 <- subset(macs, macs_assignment %in% c("Interstitial", "Alveolar"), invert = TRUE)
 
+# Need to add https://doi.org/10.1126/sciimmunol.add8945 to scarMac citations
 mac_features <- c(
-    "MMP9", "CKB", "CTSK", # Osteoclast-TAMs
-    "CD9", "SPP1", "TREM2", # Scar-Macs
+    "MMP9", "CKB", "CTSK", "CD63", # Osteoclast-TAMs
+    "CD9", "SPP1", "TREM2", "GPNMB", # Scar-Macs
     "MERTK", "FOLR2", "SELENOP", # TAMs
-    "IFIT2", "IFIT3", # IFN-TAMs
+    "CXCL10", "IFIT2", "IFI44L", # IFN-TAMs
     "IL1B", "CXCL8", # Inflammatory
     # "LYVE1", "SELENOP", # Interstitial
     # "MARCO", "TREM1", # Alveolar
@@ -877,7 +878,7 @@ mac_features <- c(
     # "MKI67", "TOP2A", # Cycling
     # "IFITM1", "IFITM2", # ncMonocyte
     "S100A8", "S100A9", # Monocyte
-    "CLEC9A", "IRF8", # DC1
+    "IRF8", "IDO1", # DC1
     "FCER1A", "CD1E") # DC2
 
 DotPlot(macs2,
