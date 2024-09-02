@@ -717,12 +717,6 @@ if(!file.exists(output/rdata/human_macs.qs)) {
 
     macs <- run_fdl(macs)
 
-    # test <- mclapply(c(5, 10, 20, 50), function(k) {
-    #     o <- FindNeighbors(macs, reduction = "harmony", k.param = k) %>% run_fdl()
-    #     return(r_dim_plot(o, reduction = "fdl", repel = TRUE, label.box = TRUE))
-    # }, mc.cores = parallelly::availableCores())
-    # wrap_plots(test, ncol = 2)
-    
     p1 <- r_dim_plot(subset(macs, subset = type == "Healthy"),
         # reduction = "fdl",
         group.by = "ann_level_4",
@@ -872,11 +866,6 @@ mac_features <- c(
     "MERTK", "FOLR2", "SELENOP", # TAMs
     "CXCL10", "IFIT2", "IFI44L", # IFN-TAMs
     "IL1B", "CXCL8", # Inflammatory
-    # "LYVE1", "SELENOP", # Interstitial
-    # "MARCO", "TREM1", # Alveolar
-    # "SPARC", "CLEC11A", # TIMs
-    # "MKI67", "TOP2A", # Cycling
-    # "IFITM1", "IFITM2", # ncMonocyte
     "S100A8", "S100A9", # Monocyte
     "IRF8", "IDO1", # DC1
     "FCER1A", "CD1E") # DC2
