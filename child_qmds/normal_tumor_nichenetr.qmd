@@ -488,6 +488,9 @@ non_james_cells$treatment <-
 non_james_cells$coarse_cell_type[non_james_cells$sn_cell_type == "AM"] <- "AM"
 non_james_cells$coarse_cell_type[non_james_cells$sn_cell_type == "IM"] <- "IM"
 
+set.seed(1337)
+gene_lists$random_genes <- sample(rownames(epi_myeloid_data), 30)
+
 epi_myeloid_data <-
     merge(
         james_tams,
@@ -525,9 +528,9 @@ FeaturePlot(
     epi_myeloid_data,
     features = c(
         "Fgf1_downstream_1",
-        "Vegfa_downstream_3",
-        "Pdgfa_downstream_4",
-        "Pdgfb_downstream_5"
+        "Vegfa_downstream_2",
+        "Pdgfa_downstream_3",
+        "Pdgfb_downstream_4"
     )
 )
 
@@ -535,17 +538,16 @@ VlnPlot(
     epi_myeloid_data,
     features = c(
         "Fgf1_downstream_1",
-        "Vegfa_downstream_3",
-        "Pdgfa_downstream_4",
-        "Pdgfb_downstream_5"),
+        "Vegfa_downstream_2",
+        "Pdgfa_downstream_3",
+        "Pdgfb_downstream_4"),
     split.by = "treatment",
     group.by = "james_cell_type",
     ncol = 1
 ) +
     theme(legend.position = "top")
 
-set.seed(1337)
-gene_lists$random_genes <- sample(rownames(epi_myeloid_data), 30)
+
 
 aucell_out <-
     AUCell::AUCell_run(GetAssayData(epi_myeloid_data), gene_lists) %>%
@@ -583,13 +585,23 @@ qs::qsave(
 
 plot_name <-
     epi_myeloid_data %>%
-    subset(coarse_cell_type %in% c("tumor", "Endothelial", "Mono", "TAM", "IM", "AM", "Cil", "Mes")) %>%
+    subset(coarse_cell_type %in% c(
+        "tumor",
+        "Endothelial",
+        "Mono",
+        "TAM",
+        "IM",
+        "AM",
+        "Cil",
+        "Mes",
+        "Epithelial")) %>%
     VlnPlot(
         features = c(
             "Fgf1_downstream",
             "Vegfa_downstream",
             "Pdgfa_downstream",
-            "Pdgfb_downstream"),
+            "Pdgfb_downstream",
+            "random_genes"),
         split.by = "treatment",
         group.by = "coarse_cell_type",
         ncol = 1
@@ -614,52 +626,121 @@ FeaturePlot(epi_myeloid_data, features = c("Fgf1_downstream", "Vegfa_downstream"
 ```{r}
 anova_pval_df <-
     data.frame(
-        matrix(
-            rep(
-                NA,
-                length(gene_lists) *
-                    length(unique(epi_myeloid_data$coarse_cell_type))
-            ),
-            ncol = length(gene_lists)
-        )
+        cell_type = unique(epi_myeloid_data$coarse_cell_type)
     )
-colnames(anova_pval_df) <- names(gene_lists)
-rownames(anova_pval_df) <- unique(epi_myeloid_data$coarse_cell_type)
 
+get_anova_f <- function(dataset, aucell_output) {
+    f_val <-
+        (aov(
+            lm(aucell_output ~ dataset$treatment)
+        ) %>%
+            summary())[[1]][1, 4]
+    return(f_val)
+}
+
+run_aucell <- function(dataset,
+                       gene_list,
+                       permute = FALSE,
+                       random_seed = 1337) {
+    aucell_out <-
+        AUCell::AUCell_run(Seurat::GetAssayData(dataset), gene_list) %>%
+        AUCell::getAUC()
+
+    return(aucell_out)
+}
+
+n_perms <- 1000
+set.seed(1337)
 for (downstream_targets in names(gene_lists)) {
-    for (cell_type in unique(epi_myeloid_data$coarse_cell_type)) {
-        sub_data <- subset(epi_myeloid_data, coarse_cell_type == cell_type)
-        anova_pval <-
-            (
-                aov(
-                    lm(unlist(sub_data[[downstream_targets]]) ~ sub_data$treatment)
-                ) %>%
-                summary()
-            )[[1]][1, 5]
-        anova_pval_df[cell_type, downstream_targets] <- anova_pval
-    }
+    message(downstream_targets)
+    stuff <-
+    parallel::mclapply(
+        unique(epi_myeloid_data$coarse_cell_type),
+        mc.cores = parallelly::availableCores(),
+        mc.preschedule = FALSE,
+        function(cell_type) {
+        message(cell_type)
+        sub_data <-
+            subset(
+                epi_myeloid_data,
+                coarse_cell_type == cell_type,
+                seed = sample(1:1000000)
+            )
+
+        anova_f <-
+            run_aucell(
+                sub_data,
+                gene_lists[[downstream_targets]]
+            ) %>%
+            as.numeric() %>%
+            get_anova_f(sub_data, .)
+
+        random_gene_lists <-
+            lapply(
+                1:n_perms,
+                function(x) {
+                    sample(
+                        rownames(sub_data),
+                        length(gene_lists[[downstream_targets]])
+                    )
+                }
+            )
+        names(random_gene_lists) <- paste0("random_genes_", 1:n_perms)
+
+# redo permutations, but permute the treatment column, then do pairwise comparisons between control and each treatment, calculating the difference in median
+
+        aucell_perms <-
+            run_aucell(
+                sub_data,
+                random_gene_lists
+            ) %>%
+            t()
+
+        perm_f_vals <-
+            lapply(
+                1:n_perms,
+                function(x) {
+                    get_anova_f(sub_data, aucell_perms[, x])
+                }
+            ) %>%
+            as.numeric() %>%
+            na.omit()
+
+        return(sum(perm_f_vals > anova_f) / length(perm_f_vals))
+    }) %>%
+        unlist()
+    anova_pval_df[downstream_targets] <- stuff
 }
 
 # Bonferroni correction
 temp <-
-    p.adjust(as.matrix(anova_pval_df)) %>%
+    column_to_rownames(anova_pval_df, "cell_type") %>%
+    as.matrix() %>%
+    p.adjust() %>%
     matrix(ncol = length(gene_lists)) %>%
-    -log10(.) %>%
+    #-log10(. + 0.001) %>%
     as.data.frame()
-colnames(temp) <- colnames(anova_pval_df)
-rownames(temp) <- rownames(anova_pval_df)
+colnames(temp) <- names(gene_lists)
+rownames(temp) <- anova_pval_df$cell_type
 
-write_tsv(temp, "output/tables/nichenetr/anova_neg_log10_pvals.tsv")
+write_tsv(temp, "output/tables/nichenetr/anova_pvals.tsv")
 
 plot_name <-
     temp %>%
     rownames_to_column("cell_type") %>%
     pivot_longer(-cell_type, names_to = "pathway", values_to = "padj") %>%
-    mutate(signif = ifelse(
-        padj < -log10(0.05),
-        "Not significant",
-        "Significant"
-    )) %>%
+    mutate(
+        signif = ifelse(
+            padj > 0.05,
+            "Not significant",
+            "Significant"
+        ),
+        label = if_else(
+            padj == 0,
+            "<0.001",
+            as.character(padj)
+        )
+    ) %>%
     ggplot(
         aes(
             x = pathway,
@@ -668,9 +749,9 @@ plot_name <-
             color = signif
             )) +
     geom_tile(height = 0.9, width = 0.9) +
-    geom_text(aes(label = round(padj, 2))) +
-    scale_fill_gradient(low = "white", high = "red") +
-    scale_color_manual(values = c("gray", "black")) +
+    geom_text(aes(label = label)) +
+    scale_fill_gradient(low = "red", high = "gray") +
+    scale_color_manual(values = c("lightgray", "black")) +
     labs(
         title = "AUCell pathway enrichment ANOVA p-values",
         x = "",
@@ -678,11 +759,10 @@ plot_name <-
     ) +
     theme(plot.title = element_text(hjust = 0.5))
 ggsave(
-    "output/figures/nichenetr/anova_neg_log10_pvals.pdf",
+    "output/figures/nichenetr/anova_pvals.pdf",
     plot_name,
-    width = 15,
-    height = 10
+    width = 10,
+    height = 8
 )
-qs::qsave(plot_name, "output/figures/nichenetr/anova_neg_log10_pvals.qs")
-
+qs::qsave(plot_name, "output/figures/nichenetr/anova_pvals.qs")
 ```
