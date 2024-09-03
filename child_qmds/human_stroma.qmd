@@ -833,8 +833,38 @@ if(!file.exists("misc/human_macs_assignments.qs")) {
         "14" = "DC1")
 
     r_dim_plot(macs, split.by = "type")
+  
+    # Fix the monocytes - find the appropriate subclusters
+    macs <- FindSubCluster(macs,
+        "Monocyte",
+        subcluster.name = "monos_subcluster",
+        graph.name = "RNA_snn",
+        resolution = 0.4)
+    
+    Idents(macs) <- macs$monos_subcluster
+    
+    r_dim_plot(macs, split.by = "type")
+    
+    monos_marks <- subset(macs2, macs_assignment == "Monocyte") %>%
+        FindAllMarkers()
+
+    gt::gt(monos_marks %>%
+        group_by(cluster) %>%
+        filter(pct.1 > 0.5) %>%
+        slice_max(avg_log2FC, n = 30) %>%
+        arrange(cluster, -avg_log2FC)) %>%
+        gt::tab_header("DEGs in human mononuclear cells (by cluster)")
+    
+    macs <- RenameIdents(macs,
+        "Monocyte_0" = "Inflammatory-TAMs",
+        "Monocyte_1" = "ncMonocyte",
+        "Monocyte_2" = "Inflammatory-TAMs",
+        "Monocyte_3" = "cMonocyte",
+        "Monocyte_4" = "Inflammatory-TAMs",
+        "Monocyte_5" = "Inflammatory-TAMs")
 
     macs$macs_assignment <- Idents(macs)
+
     qs::qsave(macs$macs_assignment, "misc/human_macs_assignments.qs")
 } else {
     macs$macs_assignment <- qs::qread("misc/human_macs_assignments.qs")
@@ -848,7 +878,9 @@ macs$macs_assignment <- factor(macs$macs_assignment, levels = c(
     "Inflammatory-TAMs",
     "Interstitial",
     "Alveolar",
-    "Monocyte",
+    "TIMs",
+    "cMonocyte",
+    "ncMonocyte",
     "DC1",
     "DC2"))
 
@@ -861,14 +893,17 @@ macs2 <- subset(macs, macs_assignment %in% c("Interstitial", "Alveolar"), invert
 
 # Need to add https://doi.org/10.1126/sciimmunol.add8945 to scarMac citations
 mac_features <- c(
-    "MMP9", "CKB", "CTSK", "CD63", # Osteoclast-TAMs
+    "MMP9", "CKB", "CTSK", # Osteoclast-TAMs
     "CD9", "SPP1", "TREM2", "GPNMB", # Scar-Macs
     "MERTK", "FOLR2", "SELENOP", # TAMs
-    "CXCL10", "IFIT2", "IFI44L", # IFN-TAMs
+    "CXCL10", "IFIT2", # IFN-TAMs
     "IL1B", "CXCL8", # Inflammatory
+    # TIMs
+    "S100A12", # cMonocyte
     "S100A8", "S100A9", # Monocyte
-    "IRF8", "IDO1", # DC1
-    "FCER1A", "CD1E") # DC2
+    "FCGR3A", # ncMonocyte
+    "IRF8", "IDO1",  # DC1
+    "FCER1A", "CD1C") # DC2
 
 DotPlot(macs2,
     features = mac_features,
