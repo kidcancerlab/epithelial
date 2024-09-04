@@ -489,7 +489,8 @@ non_james_cells$coarse_cell_type[non_james_cells$sn_cell_type == "AM"] <- "AM"
 non_james_cells$coarse_cell_type[non_james_cells$sn_cell_type == "IM"] <- "IM"
 
 set.seed(1337)
-gene_lists$random_genes <- sample(rownames(epi_myeloid_data), 30)
+gene_lists$random_genes <- sample(rownames(james_epi), 30)
+gene_lists$random_genes_2 <- sample(rownames(james_epi), 100)
 
 epi_myeloid_data <-
     merge(
@@ -583,27 +584,26 @@ qs::qsave(
     "output/figures/nichenetr/epi_myeloid_treatment_aucell_vln.qs"
 )
 
+epi_myeloid_data$vln_group <-
+    epi_myeloid_data$coarse_cell_type %>%
+    str_replace("TAM", "Infiltrating Myeloid") %>%
+    str_replace("Mono", "Infiltrating Myeloid") %>%
+    str_replace("tumor", "Tumor")
+
 plot_name <-
     epi_myeloid_data %>%
-    subset(coarse_cell_type %in% c(
-        "tumor",
-        "Endothelial",
-        "Mono",
-        "TAM",
-        "IM",
-        "AM",
-        "Cil",
-        "Mes",
+    subset(vln_group %in% c(
+        "Tumor",
+        "Infiltrating Myeloid",
         "Epithelial")) %>%
     VlnPlot(
         features = c(
             "Fgf1_downstream",
             "Vegfa_downstream",
             "Pdgfa_downstream",
-            "Pdgfb_downstream",
-            "random_genes"),
+            "Pdgfb_downstream"),
         split.by = "treatment",
-        group.by = "coarse_cell_type",
+        group.by = "vln_group",
         ncol = 1
     ) +
         theme(legend.position = "top")
@@ -629,27 +629,55 @@ anova_pval_df <-
         cell_type = unique(epi_myeloid_data$coarse_cell_type)
     )
 
-get_anova_f <- function(dataset, aucell_output) {
-    f_val <-
-        (aov(
-            lm(aucell_output ~ dataset$treatment)
-        ) %>%
-            summary())[[1]][1, 4]
-    return(f_val)
+anova_max_diff_df <-
+    data.frame(
+        cell_type = unique(epi_myeloid_data$coarse_cell_type)
+    )
+
+get_median_aucell <- function(sobj,
+                              sobj_column,
+                              group_id,
+                              group_vector) {
+    sobj[[sobj_column]][group_vector == group_id, ] |>
+    median()
 }
 
-run_aucell <- function(dataset,
-                       gene_list,
-                       permute = FALSE,
-                       random_seed = 1337) {
-    aucell_out <-
-        AUCell::AUCell_run(Seurat::GetAssayData(dataset), gene_list) %>%
-        AUCell::getAUC()
-
-    return(aucell_out)
+get_max_diff <- function(sobj,
+                         downstream_targets,
+                         groups_vector) {
+    max(
+        abs(
+            get_median_aucell(
+                sobj,
+                downstream_targets,
+                "Early Nintedanib",
+                groups_vector
+            ) -
+            get_median_aucell(
+                sobj,
+                downstream_targets,
+                "Control",
+                groups_vector
+            )
+        ),
+        abs(
+            get_median_aucell(
+                sobj,
+                downstream_targets,
+                "Late Nintedanib",
+                groups_vector
+            ) -
+            get_median_aucell(
+                sobj,
+                downstream_targets,
+                "Control",
+                groups_vector
+            )
+        )
+    )
 }
 
-n_perms <- 1000
+n_perms <- 10000
 set.seed(1337)
 for (downstream_targets in names(gene_lists)) {
     message(downstream_targets)
@@ -667,49 +695,32 @@ for (downstream_targets in names(gene_lists)) {
                 seed = sample(1:1000000)
             )
 
-        anova_f <-
-            run_aucell(
-                sub_data,
-                gene_lists[[downstream_targets]]
-            ) %>%
-            as.numeric() %>%
-            get_anova_f(sub_data, .)
+        output <- data.frame(max_diff = NA, pval = NA, median_diff = NA)
+        output$max_diff <-
+            get_max_diff(sub_data, downstream_targets, sub_data$treatment)
 
-        random_gene_lists <-
+        perm_max_diffs <-
             lapply(
                 1:n_perms,
                 function(x) {
-                    sample(
-                        rownames(sub_data),
-                        length(gene_lists[[downstream_targets]])
+                    get_max_diff(
+                        sub_data,
+                        downstream_targets,
+                        sample(sub_data$treatment)
                     )
-                }
-            )
-        names(random_gene_lists) <- paste0("random_genes_", 1:n_perms)
+                })
 
-# redo permutations, but permute the treatment column, then do pairwise comparisons between control and each treatment, calculating the difference in median
+        output$pval <-
+            sum(perm_max_diffs > output$max_diff) / n_perms
 
-        aucell_perms <-
-            run_aucell(
-                sub_data,
-                random_gene_lists
-            ) %>%
-            t()
+        output$median_diff <- unlist(perm_max_diffs) %>% median()
 
-        perm_f_vals <-
-            lapply(
-                1:n_perms,
-                function(x) {
-                    get_anova_f(sub_data, aucell_perms[, x])
-                }
-            ) %>%
-            as.numeric() %>%
-            na.omit()
-
-        return(sum(perm_f_vals > anova_f) / length(perm_f_vals))
+        return(output)
     }) %>%
-        unlist()
-    anova_pval_df[downstream_targets] <- stuff
+        bind_rows()
+    anova_pval_df[downstream_targets] <- stuff$pval
+
+    anova_max_diff_df[downstream_targets] <- stuff$max_diff
 }
 
 # Bonferroni correction
@@ -723,7 +734,17 @@ temp <-
 colnames(temp) <- names(gene_lists)
 rownames(temp) <- anova_pval_df$cell_type
 
-write_tsv(temp, "output/tables/nichenetr/anova_pvals.tsv")
+write_tsv(temp, "output/tables/nichenetr/nichenetr_pvals_adjusted.tsv")
+write_tsv(anova_max_diff_df, "output/tables/nichenetr/nichenetr_max_diff.tsv")
+
+anova_max_diff_df %>%
+    column_to_rownames("cell_type") %>%
+    pheatmap::pheatmap(
+        cluster_rows = FALSE,
+        cluster_cols = FALSE,
+        display_numbers = TRUE,
+        filename = "output/figures/nichenetr/nichenetr_max_diff_heatmap.pdf"
+    )
 
 plot_name <-
     temp %>%
@@ -737,7 +758,7 @@ plot_name <-
         ),
         label = if_else(
             padj == 0,
-            "<0.001",
+            "<0.0001",
             as.character(padj)
         )
     ) %>%
@@ -759,10 +780,10 @@ plot_name <-
     ) +
     theme(plot.title = element_text(hjust = 0.5))
 ggsave(
-    "output/figures/nichenetr/anova_pvals.pdf",
+    "output/figures/nichenetr/nichenetr_pvals.pdf",
     plot_name,
     width = 10,
     height = 8
 )
-qs::qsave(plot_name, "output/figures/nichenetr/anova_pvals.qs")
+qs::qsave(plot_name, "output/figures/nichenetr/nichenetr_pvals.qs")
 ```
