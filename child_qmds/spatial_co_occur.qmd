@@ -59,4 +59,5 @@ ggsave(
     width = 6,
     height = 10
 )
+qs::qsave(plot_name, file = "output/figures/spatial/cell_cor_plot.qs")
 ```

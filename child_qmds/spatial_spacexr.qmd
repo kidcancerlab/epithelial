@@ -1,26 +1,14 @@
 ## Load reference data to create single cell matrix
 ```{r load_spatial_ref}
 #| cache.vars: macs, murine_aec, mouse_lung_ref, f420
-macs <- qs::qread("output/rdata/macs_subclustered.qs")
-macs$cell_type_orig <- macs$cell_type
-macs_celltypes <- qs::qread("misc/murine_macs_assignments.qs") %>%
-    enframe() %>%
-    column_to_rownames("name") %>%
-    rename(cell_type = value)
+#macs <- qs::qread("output/rdata/final_murine_macs.qs")
+#macs <- macs[, !is.na(macs$macs_assignment)]
 
-macs <- AddMetaData(macs, macs_celltypes)
-macs <- subset(macs, cell_type %in% unique(macs$cell_type))
-Idents(macs) <- "cell_type"
-macs <-
-    RenameIdents(
-        macs,
-        "scarMacs" = "Scar-TAMs",
-        "angioMacs" = "Angio-TAMs"
-    )
+macs <- qs::qread("output/rdata/macs_subclustered_cleaned.qs")
+
+macs$cell_type <- macs$macs_assignment
 
 # Epithelial cells
-
-## Do we need to harmonize this across analyses? ####################################################################################
 murine_aec <- qs::qread("output/rdata/murine_aec_post-filtering.qs")
 murine_aec <-
     RenameIdents(
@@ -66,8 +54,14 @@ all_ref <-
     JoinLayers() %>%
     process_seurat()
 
-test <- DietSeurat(all_ref, data = FALSE)
-test@meta.data <-
+all_ref <-
+    DietSeurat(
+        all_ref,
+        data = FALSE,
+        dimreducs = c("pca", "umap")
+    )
+
+all_ref@meta.data <-
     all_ref@meta.data[, c(
         "cell_type",
         "seurat_clusters",
@@ -79,7 +73,7 @@ test@meta.data <-
         "sample_description"
         )]
 
-qs::qsave(test, "output/rdata/spatial_reference.qs")
+qs::qsave(all_ref, "output/rdata/spatial_reference.qs")
 
 plot_name <-
     DimPlot(
@@ -94,6 +88,7 @@ ggsave("output/figures/spatial/spacexr_ref_data.pdf",
        plot_name,
        width = 10,
        height = 10)
+qs::qsave(plot_name, "output/figures/spatial/spacexr_ref_data.qs")
 ```
 
 ### Create the Reference object
@@ -155,7 +150,7 @@ for (cell_type in all_ref$cell_type %>% unique()) {
 
     ggsave(paste0("output/figures/spatial/spacexr_",
                   cell_type,
-                  ".png"),
+                  ".pdf"),
            plot_name,
            width = 10,
            height = 10)
@@ -164,11 +159,12 @@ for (cell_type in all_ref$cell_type %>% unique()) {
 
 ## Plot
 ```{r}
-labels <- list("6" = "core",
-               "4" = "middle",
-               "7" = "periphery")
+tumor_clusters <-
+    tumor_only$seurat_clusters %>%
+        as.character() %>%
+        unique()
 
-for (cluster_number in names(labels)) {
+for (cluster_number in tumor_clusters) {
     tumor_c_celltypes <-
         subset(spatial_data, seurat_clusters == cluster_number)@meta.data %>%
         select(colnames(norm_weights)) %>%
@@ -186,14 +182,17 @@ for (cluster_number in names(labels)) {
         geom_point() +
         labs(x = "Normalized Weight",
              y = "Cell Type",
-             title = paste0("Tumor Cell Types in the ",
-                            labels[[cluster_number]]))
+             title = paste0("Tumor Cell Types in Cluster ", cluster_number))
 
-    ggsave(paste0("output/figures/spatial/spacexr_tumor_",
-                  labels[[cluster_number]],
+    ggsave(paste0("output/figures/spatial/spacexr_tumor_cluster",
+                  cluster_number,
                   "_celltypes.png"),
         tumor_c_celltypes,
         width = 8,
         height = 10)
+    qs::qsave(tumor_c_celltypes,
+               paste0("output/figures/spatial/spacexr_tumor_cluster",
+                      cluster_number,
+                      "_celltypes.qs"))
 }
 ```

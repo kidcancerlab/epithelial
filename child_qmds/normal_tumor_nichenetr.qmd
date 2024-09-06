@@ -39,6 +39,8 @@ DefaultAssay(mouse_data) <- "RNA"
 Idents(mouse_data) <- "cell_type_final"
 mouse_data[["SCT"]] <- NULL
 
+mouse_data <- JoinLayers(mouse_data)
+
 r_dim_plot(
     mouse_data,
     group.by = "cell_type_final",
@@ -219,12 +221,13 @@ nichenet_out <-
                     send_spec = "mouse"
                 )
 
-
             return(nichenet_out)
         })
 dev.off()
 
 names(nichenet_out) <- all_cell_types
+
+qs::qsave(nichenet_out, "output/rdata/nichenetr_out.qs")
 ```
 
 ## Make complex heatmaps from nichenetr output
@@ -263,7 +266,10 @@ nint_receptors <-
         "Src",
         "Flt1", # VEGFR1
         "Kdr", # VEGFR2
-        "Flt4" # VEGFR3
+        "Flt4", # VEGFR3
+        "Flt3",
+        "Lck",
+        "Lyn"
     )
 
 nint_ligands <-
@@ -276,57 +282,83 @@ nint_ligands <-
     pull(ligand) %>%
     unique()
 
+slot_1_data <- data.frame(id = character())
+slot_2_data <- data.frame(id = character())
+slot_4_data <- data.frame(y = ordered())
+
+score_cutoff <- 0.2
+
 for (receiver_cell in all_cell_types) {
     if (is.list(nichenet_out[[receiver_cell]])) {
         sub_nichenetr <- nichenet_out[[receiver_cell]]
 
-        sub_nichenetr[[4]]$data <-
-            filter(sub_nichenetr[[4]]$data, x %in% nint_receptors &
-                   y %in% nint_ligands)
+        slot_4_data <-
+            rbind(
+                slot_4_data,
+                filter(sub_nichenetr[[4]]$data, x %in% nint_receptors &
+                       y %in% nint_ligands &
+                       score > score_cutoff) %>%
+                    mutate(x = paste(receiver_cell, x))
+            )
 
         sub_nichenetr[[1]]$data <-
             filter(sub_nichenetr[[1]]$data, features.plot %in% nint_ligands)
 
+        slot_1_data <-
+            rbind(slot_1_data, sub_nichenetr[[1]]$data)
+
         sub_nichenetr[[2]]$data <-
-            filter(sub_nichenetr[[2]]$data, features.plot %in% nint_receptors)
+            filter(sub_nichenetr[[2]]$data, features.plot %in% nint_receptors) %>%
+            mutate(id = "Receptor Expression")
 
-        plot_name <- plot_complex_heatmap(sub_nichenetr)
+        if (nrow(sub_nichenetr[[2]]$data) > 0) {
+            rownames(sub_nichenetr[[2]]$data) <-
+                paste(receiver_cell, rownames(sub_nichenetr[[2]]$data))
 
-        ggsave(
-            paste0("output/figures/nichenetr/nichenet_heatmap_main_",
-                    str_replace(receiver_cell, "/", "_"),
-                    ".pdf"),
-            plot_name,
-            width = 6,
-            height = 8
-        )
-        qs::qsave(
-            plot_name,
-            paste0(
-                "output/figures/nichenetr/nichenet_heatmap_main_",
-                str_replace(receiver_cell, "/", "_"),
-                ".qs"
-            )
-        )
+            slot_2_data <-
+                rbind(
+                    slot_2_data,
+                    mutate(
+                        sub_nichenetr[[2]]$data,
+                        features.plot = paste(receiver_cell, features.plot)
+                    )
+                )
+        }
+
     } else {
         print(paste(receiver_cell, "-", nichenet_out[[receiver_cell]]))
     }
 }
+
+# Pf4 had really low scores (~0.02) and was filtered out of slot_4_data, but not
+# from slot_1_data, so we're doing it here
+slot_1_data <-
+    filter(slot_1_data,
+           features.plot %in% slot_4_data$y)
+holder_list <-
+    list(
+        list(data = slot_1_data),
+        list(data = slot_2_data),
+        NULL,
+        list(data = slot_4_data)
+    )
+
+plot_name <-
+    plot_complex_heatmap(holder_list) +
+    theme(legend.direction = "vertical", legend.box = "horizontal")
+
+ggsave(
+    "output/figures/nichenetr/nichenet_heatmap_main.pdf",
+    plot_name,
+    width = 7,
+    height = 5
+)
 ```
 
 
-Do the same thing with Cabo samples
-```{r}
-nint_receptors <-
-    c(
-        "Fgfr1", "Fgfr2", "Fgfr3", "Fgfr4",
-        "Pdgfra", "Pdgfrb",
-        "Src",
-        "Flt1", # VEGFR1
-        "Kdr", # VEGFR2
-        "Flt4" # VEGFR3
-    )
+Do the same thing with Cabo samples?
 
+```{r}
 ligand_receptors <-
     rrrSingleCellUtils:::rrr_env$lr_network_strict %>%
     mutate(from = nichenetr::convert_human_to_mouse_symbols(from),
@@ -401,7 +433,6 @@ gene_lists <-
 gene_lists <-
     list(
         Fgf1_downstream = gene_lists$Fgf1[[1]],
-        #Fgf2_downstream = gene_lists$Fgf2[[1]],
         Vegfa_downstream = gene_lists$Vegfa[[1]],
         Pdgfa_downstream = gene_lists$Pdgfa[[1]],
         Pdgfb_downstream = gene_lists$Pdgfb[[1]]
@@ -420,7 +451,6 @@ FeaturePlot(
     mouse_data,
     features = c(
         "Fgf1_downstream_1",
-        "Fgf2_downstream_2",
         "Vegfa_downstream_3",
         "Pdgfa_downstream_4",
         "Pdgfb_downstream_5"
@@ -458,12 +488,15 @@ non_james_cells$treatment <-
 non_james_cells$coarse_cell_type[non_james_cells$sn_cell_type == "AM"] <- "AM"
 non_james_cells$coarse_cell_type[non_james_cells$sn_cell_type == "IM"] <- "IM"
 
+set.seed(1337)
+gene_lists$random_genes <- sample(rownames(james_epi), 30)
+gene_lists$random_genes_2 <- sample(rownames(james_epi), 100)
+
 epi_myeloid_data <-
     merge(
         james_tams,
         list(james_epi, non_james_cells)
     ) %>%
-    #subset(treatment != "Early Nintedanib") %>%
     process_seurat() %>%
     AddModuleScore(
         features = gene_lists,
@@ -496,10 +529,9 @@ FeaturePlot(
     epi_myeloid_data,
     features = c(
         "Fgf1_downstream_1",
-        "Fgf2_downstream_2",
-        "Vegfa_downstream_3",
-        "Pdgfa_downstream_4",
-        "Pdgfb_downstream_5"
+        "Vegfa_downstream_2",
+        "Pdgfa_downstream_3",
+        "Pdgfb_downstream_4"
     )
 )
 
@@ -507,33 +539,34 @@ VlnPlot(
     epi_myeloid_data,
     features = c(
         "Fgf1_downstream_1",
-        "Fgf2_downstream_2",
-        "Vegfa_downstream_3",
-        "Pdgfa_downstream_4",
-        "Pdgfb_downstream_5"),
+        "Vegfa_downstream_2",
+        "Pdgfa_downstream_3",
+        "Pdgfb_downstream_4"),
     split.by = "treatment",
     group.by = "james_cell_type",
     ncol = 1
 ) +
     theme(legend.position = "top")
 
-test <-
+
+
+aucell_out <-
     AUCell::AUCell_run(GetAssayData(epi_myeloid_data), gene_lists) %>%
     AUCell::getAUC() %>%
     as.data.frame() %>%
     t()
 
-epi_myeloid_data <- AddMetaData(epi_myeloid_data, test)
+epi_myeloid_data <- AddMetaData(epi_myeloid_data, aucell_out)
 
 plot_name <-
     VlnPlot(
         epi_myeloid_data,
         features = c(
             "Fgf1_downstream",
-            "Fgf2_downstream",
             "Vegfa_downstream",
             "Pdgfa_downstream",
-            "Pdgfb_downstream"),
+            "Pdgfb_downstream",
+            "random_genes"),
         split.by = "treatment",
         group.by = "coarse_cell_type",
         ncol = 1
@@ -546,24 +579,31 @@ ggsave(
     width = 10,
     height = 15
 )
-
 qs::qsave(
     plot_name,
     "output/figures/nichenetr/epi_myeloid_treatment_aucell_vln.qs"
 )
 
+epi_myeloid_data$vln_group <-
+    epi_myeloid_data$coarse_cell_type %>%
+    str_replace("TAM", "Infiltrating Myeloid") %>%
+    str_replace("Mono", "Infiltrating Myeloid") %>%
+    str_replace("tumor", "Tumor")
+
 plot_name <-
     epi_myeloid_data %>%
-    subset(coarse_cell_type %in% c("tumor", "epithelial", "Mono", "TAM", "IM", "AM")) %>%
+    subset(vln_group %in% c(
+        "Tumor",
+        "Infiltrating Myeloid",
+        "Epithelial")) %>%
     VlnPlot(
         features = c(
             "Fgf1_downstream",
-            "Fgf2_downstream",
             "Vegfa_downstream",
             "Pdgfa_downstream",
             "Pdgfb_downstream"),
         split.by = "treatment",
-        group.by = "coarse_cell_type",
+        group.by = "vln_group",
         ncol = 1
     ) +
         theme(legend.position = "top")
@@ -574,12 +614,100 @@ ggsave(
     width = 10,
     height = 15
 )
-
 qs::qsave(
     plot_name,
     "output/figures/nichenetr/epi_myeloid_treatment_aucell_vln_main.qs"
 )
 
-FeaturePlot(epi_myeloid_data, features = c("Fgf1_downstream", "Fgf2_downstream", "Vegfa_downstream"))
+FeaturePlot(epi_myeloid_data, features = c("Fgf1_downstream", "Vegfa_downstream"))
 ```
 
+## Try doing statistical analysis on the AUCell data
+```{r}
+output <- data.frame(cell_type = character())
+min_cells <- 20
+
+for (downstream_targets in names(gene_lists)) {
+    message(downstream_targets)
+    for (second_group in c("Early Nintedanib", "Late Nintedanib")) {
+        message(second_group)
+        output <-
+            parallel::mclapply(
+                unique(epi_myeloid_data$coarse_cell_type),
+                mc.cores = parallelly::availableCores(),
+                mc.preschedule = FALSE,
+                function(cell_type) {
+                message(cell_type)
+                sub_data <-
+                    subset(
+                        epi_myeloid_data,
+                        coarse_cell_type == cell_type &
+                            treatment %in% c("Control", second_group),
+                        seed = sample(1:1000000)
+                    )
+
+                stuff <-
+                    data.frame(
+                        cell_type = cell_type,
+                        downstream_targets = downstream_targets,
+                        group_1 = "Control",
+                        group_2 = second_group
+                    )
+
+                if (min(table(sub_data$treatment)) > min_cells) {
+                    stuff$p_val <-
+                        t.test(
+                            get(downstream_targets) ~ treatment,
+                            data = sub_data@meta.data
+                        )$p.value
+
+                    stuff$eff_size <-
+                        effsize::cohen.d(
+                            get(downstream_targets) ~ treatment,
+                            data = sub_data@meta.data
+                        )$estimate
+                }
+
+                return(stuff)
+            }) %>%
+            bind_rows(output)
+
+        sub_data <-
+            subset(
+                epi_myeloid_data,
+                vln_group == "Infiltrating Myeloid" &
+                    treatment %in% c("Control", second_group),
+                seed = sample(1:1000000)
+            )
+
+        stuff <-
+            data.frame(
+                cell_type = "Infiltrating Myeloid",
+                downstream_targets = downstream_targets,
+                group_1 = "Control",
+                group_2 = second_group
+            )
+
+        stuff$p_val <-
+            t.test(
+                get(downstream_targets) ~ treatment,
+                data = sub_data@meta.data
+            )$p.value
+
+        stuff$eff_size <-
+            effsize::cohen.d(
+                get(downstream_targets) ~ treatment,
+                data = sub_data@meta.data
+            )$estimate
+
+        output <- bind_rows(output, stuff)
+
+    }
+}
+
+output$fdr_value <- qvalue::qvalue(output$p_val)$qvalue
+
+# FDR correction
+
+write_tsv(output, "output/tables/nichenetr/nichenetr_effect_pvals.tsv")
+```

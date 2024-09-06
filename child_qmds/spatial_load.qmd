@@ -2,12 +2,23 @@
 
 ROB491D-1     SP0001      F420 lung met
 
-```{r loadData}
+```{r spatial_loadData}
 #| cache.vars: spatial_data
 spatial_data <-
-    Load10X_Spatial("/home/gdrobertslab/lab/Counts_2/SP0001/outs/",
-                    filename = "filtered_feature_bc_matrix.h5") %>%
+    Load10X_Spatial(
+        "/home/gdrobertslab/lab/Counts_2/SP0001/outs/",
+        filename = "filtered_feature_bc_matrix.h5",
+        image = Read10X_Image(
+            image.dir = "/home/gdrobertslab/lab/Counts_2/SP0001/outs/spatial",
+            image.name = "tissue_hires_image.png"
+        )
+    ) %>%
     subset(nCount_Spatial > 0)
+
+# Seurat hard codes that you're using lowres for the scale factors
+# https://github.com/satijalab/seurat/issues/5614#issuecomment-1194555472
+spatial_data@images$slice1@scale.factors$lowres <-
+    spatial_data@images$slice1@scale.factors$hires
 
 spatial_data <- AddMetaData(spatial_data, GetTissueCoordinates(spatial_data))
 
@@ -25,7 +36,7 @@ spatial_data$sample_id <- "SP0001"
 ```
 
 ## Process the data
-```{r processData}
+```{r spatial_processData}
 spatial_data <-
     spatial_data %>%
     SCTransform(assay = "Spatial") %>%
@@ -36,14 +47,14 @@ spatial_data <-
 ```
 
 ## Add in module for tumor marker genes
-```{r addTumorMarkers}
+```{r spatial_addTumorMarkers}
 tumor_features <- c("Runx2", "Fn1", "Mki67", "Col1a1")
 spatial_data <-
     AddModuleScore(spatial_data, list(tumor_features), name = "tumor_markers")
 ```
 
 ## Make some plots of the data
-```{r plotStuff}
+```{r spatial_plotStuff}
 plot_name <-
     SpatialDimPlot(
         spatial_data,
@@ -51,11 +62,12 @@ plot_name <-
         label = TRUE
     )
 ggsave(
-    "output/figures/spatial/spatial_dimplot_plot.png",
+    "output/figures/spatial/spatial_dimplot_plot.pdf",
     plot_name,
     width = 15,
     height = 15
 )
+qs::qsave(plot_name, file = "output/figures/spatial/spatial_dimplot_plot.qs")
 
 plot_name <-
     DimPlot(
@@ -64,10 +76,14 @@ plot_name <-
         repel = TRUE
     )
 ggsave(
-    "output/figures/spatial/spatial_umap_plot_by_cluster.png",
+    "output/figures/spatial/spatial_umap_plot_by_cluster.pdf",
     plot_name,
     width = 15,
     height = 10
+)
+qs::qsave(
+    plot_name,
+    file = "output/figures/spatial/spatial_umap_plot_by_cluster.qs"
 )
 
 plot_name <-
@@ -77,11 +93,12 @@ plot_name <-
         pt.size.factor = 2
     )
 ggsave(
-    "output/figures/spatial/spatial_plot_by_feature.png",
+    "output/figures/spatial/spatial_plot_by_feature.pdf",
     plot_name,
     width = 15,
     height = 15
 )
+qs::qsave(plot_name, file = "output/figures/spatial/spatial_plot_by_feature.qs")
 
 vln_plot <-
     VlnPlot(
@@ -91,15 +108,16 @@ vln_plot <-
         cols = sample(rainbow(50))
     )
 ggsave(
-    "output/figures/spatial/vln_plot.png",
+    "output/figures/spatial/vln_tumor_markers_plot.pdf",
     vln_plot,
     width = 10,
     height = 5
 )
+qs::qsave(vln_plot, file = "output/figures/spatial/vln_tumor_markers_plot.qs")
 ```
 
 ## Split out tumor spots
-```{r splitTumor}
+```{r spatial_splitTumor}
 col_cutoff <- 1
 
 tumor_clusters <-
@@ -107,7 +125,7 @@ tumor_clusters <-
     select(tumor_markers1, seurat_clusters) %>%
     rownames_to_column("spot") %>%
     group_by(seurat_clusters) %>%
-    summarize(tumor_median = median(tumor_markers1)) %>%
+    dplyr::summarize(tumor_median = median(tumor_markers1)) %>%
     arrange(desc(tumor_median)) %>% # Put them in order so we can use this later
     filter(tumor_median > col_cutoff) %>%
     pull(seurat_clusters)
@@ -140,14 +158,16 @@ plot_3 <-
 merged_plot <- patchwork::wrap_plots(plot_1, plot_2, plot_3, ncol = 2)
 
 ggsave(
-    "output/figures/spatial/tumor_clusters_vln.png",
+    "output/figures/spatial/tumor_clusters_vln.pdf",
     merged_plot,
     width = 10,
     height = 10
 )
+qs::qsave(merged_plot, file = "output/figures/spatial/tumor_clusters_vln.qs")
+
 ```
 
 ## Save off the data
-```{r eval=FALSE}
+```{r spatial_final_save}
 qs::qsave(spatial_data, file = "output/rdata/spatial_data.qs")
 ```

@@ -1,0 +1,107 @@
+
+```{r}
+spatial_data <- qs::qread("output/rdata/spatial_data_deconvoluted.qs")
+
+gene_lists <- qs::qread("output/rdata/nichenetr_gene_lists.qs")
+```
+
+```{r spatial_add_modules}
+test <-
+    AUCell::AUCell_run(GetAssayData(spatial_data), gene_lists) %>%
+    AUCell::getAUC() %>%
+    as.data.frame() %>%
+    t()
+
+spatial_data <- AddMetaData(spatial_data, test)
+
+plot_name <-
+    SpatialFeaturePlot(
+        spatial_data,
+        features = c(
+            "Fgf1_downstream",
+            "Vegfa_downstream",
+            "Pdgfa_downstream",
+            "Pdgfb_downstream"
+            ),
+        pt.size.factor = 2
+    )
+ggsave(
+    "output/figures/spatial/nint_paths_featurePlot.pdf",
+    plot_name,
+    width = 10,
+    height = 10
+    )
+qs::qsave(plot_name, "output/figures/spatial/nint_paths_featurePlot.qs")
+
+plot_name <-
+    VlnPlot(
+        spatial_data,
+        features = c(
+            "Fgf1_downstream",
+            "Vegfa_downstream",
+            "Pdgfa_downstream",
+            "Pdgfb_downstream"
+            ),
+        group.by = "seurat_clusters",
+        ncol = 1
+    )
+ggsave(
+    "output/figures/spatial/nint_paths_vlnPlot.pdf",
+    plot_name,
+    width = 6,
+    height = 10
+    )
+
+```
+
+
+```{r}
+fgf1_cutoff <- 0.13
+
+spatial_data@meta.data %>%
+    ggplot(aes(x = Fgf1_downstream)) +
+    geom_histogram(bins = 100) +
+    geom_vline(xintercept = fgf1_cutoff, color = "red")
+
+spatial_data$high_fgf1 <- spatial_data$Fgf1_downstream > fgf1_cutoff
+
+SpatialDimPlot(
+    spatial_data,
+    group.by = "high_fgf1"
+)
+
+
+rctd_out <- qs::qread("output/rdata/rctd_out.qs")
+
+norm_weights <-
+    spacexr::normalize_weights(rctd_out@results$weights)
+
+
+# This approach didn't seem to work well - pAEC2 came out as third
+subset(spatial_data, Fgf1_downstream > fgf1_cutoff)@meta.data %>%
+    select(colnames(norm_weights)) %>%
+    as_tibble() %>%
+    pivot_longer(everything()) %>%
+    group_by(name) %>%
+    mutate(median_value = median(value, na.rm = TRUE)) %>%
+    ungroup() %>%
+    mutate(name = factor(name) %>%
+            fct_reorder(median_value),
+            factor_number = as.numeric(name)) %>%
+    filter(factor_number >= max(factor_number) - 10) %>%
+    ggplot(aes(y = name, x = value)) +
+    geom_boxplot() +
+    geom_point()
+
+plot_list <-
+lapply(
+    colnames(norm_weights),
+    function(gene) {
+    spatial_data@meta.data %>%
+        ggplot(aes(x = get(gene), y = Fgf1_downstream)) +
+        geom_point() +
+        labs(x = gene)
+    })
+wrap_plots(plot_list)
+
+```
