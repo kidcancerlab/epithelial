@@ -118,7 +118,7 @@ if(!file.exists("misc/murine_macs_assignments.qs")) {
         r_dim_plot(macs, split.by = "tissue")
         macs <- run_fdl(macs)
         r_dim_plot(macs, split.by = "tissue", reduction = "fdl")
-DimPlot()
+
         deg_macs_1 <- FindAllMarkers(macs)
 
         gt::gt(deg_macs_1 %>%
@@ -138,7 +138,7 @@ DimPlot()
                 10, # Endothelial
                 11, # Lymphocytes
                 12, # Unknown, Tumor?
-                13, # Alveolar macs
+                # 13, # Alveolar macs
                 16, # Fibroblasts
                 17, # Goblet
                 18, # Erythrocyte
@@ -160,21 +160,7 @@ DimPlot()
             FindNeighbors(reduction = "harmony", dims = 1:30) %>%
             FindClusters(resolution = seq(0.1, 1, 0.1))
 
-        # future::plan(multisession, workers = parallelly::availableCores())
-        # plots <- future.apply::future_lapply(
-        #     c(0.01, 0.1, 0.3, 1, 3),
-        #     function(i) {
-        #         RunUMAP(macs,
-        #             reduction = "harmony",
-        #             dims = 1:30,
-        #             min.dist = i,
-        #             spread = 5
-        #         ) %>%
-        #         r_dim_plot()
-        #     })
-        # wrap_plots(plots, ncol = 3)
-
-        # A resolution of 0.8 looks pretty good
+        # A resolution of 1 looks pretty good
         Idents(macs) <- macs$RNA_snn_res.1
         r_dim_plot(macs, split.by = "tissue")
 
@@ -248,27 +234,28 @@ DimPlot()
         as.data.frame()
     
     rownames(mac_scores) <- mac_scores[, 1]
-    mac_scores <- mac_scores[, -1] %>%
-        data.matrix() %>%
+    mac_scores <- mac_scores[, -1] 
+    data.matrix(mac_scores) %>%
         heatmap()
     
-    auc_plots <- lapply(names(mac_scores), function(i) {
+    auc_plots <- lapply(colnames(mac_scores), function(i) {
         r_feature_plot(macs, i, min.cutoff = 0.2, max.cutoff = 0.6)
     })
     wrap_plots(auc_plots, ncol = 4)
 
     # Look at expression of key marker genes by cluster
     mac_genes <- c(
-        "S100a8", "Sell", "Ifitm6",  # cMonocyte
-        "Itgal", "Ace", "Spn",  # ncMonocyte
-        "C1qa",  # TAMs, Osteoclast-like?, https://doi.org/10.1186/s41232-022-00213-x
-        "Lyve1", "Mrc1",  # Tissue resident/interstitial
+        "Mmp9", "Ckb", "Ctsk",  # Osteoclast-TAMs, https://doi.org/10.1186/s41232-022-00213-x
         "Trem2", "Cd9", "Gpnmb", "Spp1",  # Scar-associated, see https://doi.org/10.1038/s41586-019-1631-3
+        # TAMs, generic
         "Ifit1", "Ifit2", "Cxcl10", # IFN-TAMs
-        "Il1a", "Fn1", "Arg1",  # Angio-TAMs
-        "Acp5", "Ctsk", # LA-TAMs
-        "Fos", "Jun", "Atf3", # Inflammatory TAMs
+        "Il1a", "Il1b", "Fn1",  # Inflammatory-TAMs
+        # "Acp5", "Ctsk", # LA-TAMs
         "Top2a", "Hist1h1b", "Birc5",  # Cycling
+        "Marco", "Siglecf", "Itgax", # Alveolar
+        "Lyve1", "Mrc1",  # Tissue resident/interstitial
+        "S100a8", "Sell", "Ifitm6", "Ly6c2",  # cMonocyte
+        "Itgal", "Ace", "Spn", "Cx3cr1", # ncMonocyte
         "Cd209a", "Ccr7", "Dcstamp", # Pre-DC
         "H2-Ab1", "Clec9a", "Irf8",  # DC1
         "Fscn1", "Ccl5") # DC2
@@ -280,47 +267,87 @@ DimPlot()
         scale_y_discrete(limits = rev) +
         theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
         coord_fixed()
+    
+    r_dim_plot(macs, split.by = "tissue")
 
-    # What distinguishes the big cluster - 0, 1, 5, 7?
-    FindMarkers(macs, ident.1 = c(0, 1, 4, 7)) %>%
+    # What distinguishes the big cluster - 0, 1, 5?
+    FindMarkers(macs, ident.1 = c(0, 1, 5)) %>%
         filter(pct.1 > 0.5) %>%
         arrange(-avg_log2FC) %>%
         head(n = 20)
 
     # Name the clusters
-    macs <- RenameIdents(macs,
-        `0` = "TAM",
-        `1` = "TAM",
-        `2` = "scarMac",
-        `3` = "Pre-DC",
-        `4` = "TAM",
-        `5` = "IFN-TAM",
-        `6` = "scarMac",
-        `7` = "TAM",
-        `8` = "Cycling",
-        `9` = "DC1",
-        `10` = "ncMonocyte",
-        `11` = "Pre-DC",
-        `12` = "scarMac",
+    macs2 <- RenameIdents(macs,
+        `0` = "Scar-TAMs",
+        `1` = "TAMs",
+        `2` = "IFN-TAMs",
+        `3` = "TAMs",
+        `4` = "TAMs",
+        `5` = "Inflammatory-TAMs",
+        `6` = "DC1",
+        `7` = "TAMs",
+        `8` = "Pre-DC",
+        `9` = "Pre-DC",
+        `10` = "Scar-TAMs",
+        `11` = "cMonocyte",
+        `12` = "Cycling",
         `13` = "cMonocyte",
-        `14` = "Cycling",
-        `15` = "Interstitial",
-        `16` = "Osteoclasts",
-        `17` = "Cycling",
-        `18` = "scarMac",
-        `19` = "cMonocyte")
+        `14` = "ncMonocyte",
+        `15` = "Pre-DC",
+        `16` = "Cycling",
+        `17` = "TAMs",
+        `18` = "Alveolar",
+        `19` = "Interstitial",
+        `20` = "Osteoclast-TAMs",
+        `21` = "Scar-TAMs",
+        `22` = "cMonocyte")
 
-    macs$macs_assignment <- Idents(macs) %>%
-        factor(levels = c("scarMac", "IFN-TAM",  "TAM", "Cycling", "cMonocyte",
-        "ncMonocyte", "Interstitial", "Osteoclast", "Pre-DC", "DC1"))
+    macs2$macs_assignment <- Idents(macs2) %>%
+        factor(levels = c(
+            "Osteoclast-TAMs", 
+            "Scar-TAMs", 
+            "TAMs", 
+            "IFN-TAMs", 
+            "Inflammatory-TAMs", 
+            "Cycling", 
+            "Alveolar",
+            "Interstitial",
+            "cMonocyte",
+            "ncMonocyte", 
+            "Pre-DC",
+            "DC1",
+            "DC2",
+            0:25))
+    
+    r_dim_plot(macs2, split.by = "tissue")
 
-    qs::qsave(macs$macs_assignment, "misc/murine_macs_assignments.qs")
+    DotPlot(macs2,
+        features = mac_genes,
+        group.by = "macs_assignment",
+        cols = "RdBu",
+        col.max = 1.5) +
+        scale_y_discrete(limits = rev) +
+        theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+        coord_fixed()
+
+    qs::qsave(macs2$macs_assignment, "misc/murine_macs_assignments.qs")
 } else {
     macs_assignment <- qs::qread("misc/murine_macs_assignments.qs")
     macs <- subset(macs, cells = names(macs_assignment))
     macs$macs_assignment <- macs_assignment %>%
-        factor(levels = c("scarMac", "IFN-TAM",  "TAM", "Cycling", "cMonocyte",
-        "ncMonocyte", "Interstitial", "Osteoclast", "Pre-DC", "DC1"))
+        factor(levels = c(
+            "Osteoclast-TAMs", 
+            "Scar-TAMs", 
+            "TAMs", 
+            "IFN-TAMs", 
+            "Inflammatory-TAMs", 
+            "Cycling", 
+            "Alveolar",
+            "Interstitial",
+            "cMonocyte",
+            "ncMonocyte", 
+            "Pre-DC",
+            "DC1"))
 
     macs <- macs %>%
         FindVariableFeatures() %>%
@@ -334,10 +361,13 @@ DimPlot()
         FindNeighbors(reduction = "harmony", dims = 1:30) %>%
         FindClusters(resolution = 0.8)
 
-    r_dim_plot(macs, split.by = "tissue")
+    r_dim_plot(macs, split.by = "tissue", group.by = "macs_assignment")
 
     macs <- run_fdl(macs)
-    r_dim_plot(macs, split.by = "tissue", reduction = "fdl")
+    r_dim_plot(macs, 
+        split.by = "tissue", 
+        reduction = "fdl", 
+        group.by = "macs_assignment")
 
     qs::qsave(macs, "output/rdata/macs_subclustered_cleaned.qs")
 } else {
@@ -349,26 +379,30 @@ p2 <- r_dim_plot(macs, group.by = "cell_type")
 p3 <- r_dim_plot(macs, group.by = "sample", shuffle = TRUE)
 p1 + p2 + p3
 
-r_dim_plot(macs, split.by = "tissue")
+r_dim_plot(macs, split.by = "tissue", group.by = "macs_assignment")
 ```
 
 ```{r mac_plots, dependson='macs', eval=TRUE}
 # Refine the markers for the macrophage cell types
 mac_genes <- c(
-    "Trem2", "Cd9", "Gpnmb", "Spp1", "Fn1", # Scar-associated, see https://doi.org/10.1038/s41586-019-1631-3
+    "Mmp9", "Ctsk", "Nfatc1", # Osteoclast-TAMs, https://doi.org/10.1186/s41232-022-00213-x
+    "Cd9", "Trem2", "Spp1", "Gpnmb", # Scar-associated, see https://doi.org/10.1038/s41586-019-1631-3
+    "Ms4a7", "Selenop", # TAMs, generic
     "Ifit1", "Ifit2", "Cxcl10", # IFN-TAMs
-     # TAMs are bland when compared to the rest of these populations
+    "Il1a", "Il1b", "Fn1",  # Inflammatory-TAMs
     "Top2a", "Hist1h1b", "Birc5",  # Cycling
     "Ly6c2", "Sell", "Ifitm6",  # cMonocyte
-    "Itgal", "Ace", "Spn",  # ncMonocyte
-    "Lyve1", "Mrc1", "Cd163",  # Tissue resident/interstitial
-    "Nfatc1", "Mmp9", "Slc9b2", # Osteoclast-TAMs
+    "Itgal", "Ace", "Spn", # ncMonocyte
     "Cd209a", "Ccr7", "Dcstamp", # Pre-DC
-    "Xcr1", "Clec9a", "Irf8")  # DC1
+    "Xcr1", "Clec9a", "Irf8") # DC1
 
 Idents(macs) <- macs$macs_assignment
 
-DotPlot(macs,
+macs2 <- subset(macs, 
+    macs_assignment %in% c("Interstitial", "Alveolar"),
+    invert = TRUE)
+
+DotPlot(macs2,
     features = mac_genes,
     group.by = "macs_assignment",
     cols = "RdBu",
@@ -377,10 +411,10 @@ DotPlot(macs,
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
     coord_fixed()
 
-r_dim_plot(macs, split.by = "tissue")
+r_dim_plot(macs2, split.by = "tissue")
 
 cluster_counts <-
-    table(macs$obj_name, macs$macs_assignment) %>%
+    table(macs2$obj_name, macs2$macs_assignment) %>%
     as.data.frame() %>%
     dplyr::rename("Sample" = "Var1",
                   "Cluster" = "Var2",
