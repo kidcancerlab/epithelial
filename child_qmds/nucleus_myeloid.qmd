@@ -2,7 +2,7 @@ We are interested in how the myeloid population in the treated samples compare t
 
 ## Subset Out Myeloid Cells
 
-```{r}
+```{r snRNA_load_merged}
 if (!exists("merged_samples")) merged_samples <- qs::qread("output/rdata/nucleus/merged_samples.qs")
 ```
 
@@ -60,7 +60,7 @@ Before he makes annotations, James is interested in subsetting clusters 0 and 1 
 will be considered for further analysis.
 
 ```{r}
-myeloid <- subset(myeloid, seurat_clusters  %in% c(0,1)) %>%
+myeloid <- subset(myeloid, seurat_clusters  %in% c(0, 1)) %>%
     process_seurat()
 
 DimPlot(myeloid, label = TRUE)
@@ -99,9 +99,9 @@ I think it will be useful to recursively cluster the myeloid object and possibly
 myeloid <- recurluster(myeloid,
                        do_plots = FALSE)
 
-DimPlot(myeloid,group.by = c("seurat_clusters",
-                             "clust_1",
-                             "clust_2"))
+DimPlot(myeloid, group.by = c("seurat_clusters",
+                              "clust_1",
+                              "clust_2"))
 
 Idents(myeloid) <- myeloid$clust_2
 
@@ -120,9 +120,9 @@ myeloid <- subset(myeloid, clust_2 != "clust_0.1")
 myeloid@meta.data <- myeloid@meta.data %>%
     mutate(james_cell_type = recode(clust_2,
                                     "clust_0.0" = "TAMs",
-                                    "clust_1.0" = "Scar-TAMs",
+                                    "clust_1.0" = "Scar",
                                     "clust_1.1" = "Interstitial",
-                                    "clust_20" = "Angio-TAMs"))
+                                    "clust_20" = "Scar"))
 ```
 
 ### Visualize New Annotations
@@ -137,7 +137,11 @@ myeloid$treatment <- recode(myeloid$sample_id,
 # This has only seurat clusters 0 and 1 from the original myeloid object above
 qs::qsave(myeloid, "output/rdata/nucleus/myeloid_processed.qs")
 
-pdf("output/figures/nucleus/myeloid_split_umap.pdf", height = 5, width = 15)
+pdf(
+    "output/figures/nucleus/myeloid_split_umap.pdf",
+    height = 5,
+    width = 15
+)
 r_dim_plot(myeloid, group.by = "james_cell_type", split.by = "treatment")
 dev.off()
 
