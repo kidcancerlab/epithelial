@@ -234,7 +234,16 @@ qs::qsave(nichenet_out, "output/rdata/nichenetr_out.qs")
 ```{r}
 for (receiver_cell in all_cell_types) {
     if (is.list(nichenet_out[[receiver_cell]])) {
-        plot_name <- plot_complex_heatmap(nichenet_out[[receiver_cell]])
+        plot_name <-
+            plot_complex_heatmap(nichenet_out[[receiver_cell]]) +
+            labs(
+                title = paste(
+                    "Nichenetr results where",
+                    receiver_cell,
+                    "is the receiver cell"
+                )
+            )
+
         ggsave(
             paste0("output/figures/nichenetr/nichenet_heatmap_",
                     str_replace(receiver_cell, "/", "_"),
@@ -243,6 +252,7 @@ for (receiver_cell in all_cell_types) {
             width = 15,
             height = 6
         )
+
         qs::qsave(
             plot_name,
             paste0(
