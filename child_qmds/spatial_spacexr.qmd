@@ -1,8 +1,10 @@
 ## Load reference data to create single cell matrix
 ```{r load_spatial_ref}
 #| cache.vars: macs, murine_aec, mouse_lung_ref, f420
-macs <- qs::qread("output/rdata/final_murine_macs.qs")
-macs <- macs[, !is.na(macs$macs_assignment)]
+#macs <- qs::qread("output/rdata/final_murine_macs.qs")
+#macs <- macs[, !is.na(macs$macs_assignment)]
+
+macs <- qs::qread("output/rdata/macs_subclustered_cleaned.qs")
 
 macs$cell_type <- macs$macs_assignment
 
