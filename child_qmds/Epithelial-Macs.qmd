@@ -40,7 +40,7 @@ if(!file.exists("output/rdata/all_sobj_integrated.qs")) {
         RunUMAP(reduction = "harmony", dims = 1:30) %>%
         FindNeighbors(reduction = "harmony", dims = 1:30) %>%
         FindClusters(resolution = 0.2)
-    
+
     qs::qsave(all_sobj, "output/rdata/all_sobj_integrated.qs")
 } else {
     all_sobj <- qs::qread("output/rdata/all_sobj_integrated.qs")
@@ -232,12 +232,12 @@ if(!file.exists("misc/murine_macs_assignments.qs")) {
         group_by(seurat_clusters) %>%
         summarise_all(mean) %>%
         as.data.frame()
-    
+
     rownames(mac_scores) <- mac_scores[, 1]
-    mac_scores <- mac_scores[, -1] 
+    mac_scores <- mac_scores[, -1]
     data.matrix(mac_scores) %>%
         heatmap()
-    
+
     auc_plots <- lapply(colnames(mac_scores), function(i) {
         r_feature_plot(macs, i, min.cutoff = 0.2, max.cutoff = 0.6)
     })
@@ -267,7 +267,7 @@ if(!file.exists("misc/murine_macs_assignments.qs")) {
         scale_y_discrete(limits = rev) +
         theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
         coord_fixed()
-    
+
     r_dim_plot(macs, split.by = "tissue")
 
     # What distinguishes the big cluster - 0, 1, 5?
@@ -304,21 +304,21 @@ if(!file.exists("misc/murine_macs_assignments.qs")) {
 
     macs2$macs_assignment <- Idents(macs2) %>%
         factor(levels = c(
-            "Osteoclast-TAMs", 
-            "Scar-TAMs", 
-            "TAMs", 
-            "IFN-TAMs", 
-            "Inflammatory-TAMs", 
-            "Cycling", 
+            "Osteoclast-TAMs",
+            "Scar-TAMs",
+            "TAMs",
+            "IFN-TAMs",
+            "Inflammatory-TAMs",
+            "Cycling",
             "Alveolar",
             "Interstitial",
             "cMonocyte",
-            "ncMonocyte", 
+            "ncMonocyte",
             "Pre-DC",
             "DC1",
             "DC2",
             0:25))
-    
+
     r_dim_plot(macs2, split.by = "tissue")
 
     DotPlot(macs2,
@@ -336,16 +336,16 @@ if(!file.exists("misc/murine_macs_assignments.qs")) {
     macs <- subset(macs, cells = names(macs_assignment))
     macs$macs_assignment <- macs_assignment %>%
         factor(levels = c(
-            "Osteoclast-TAMs", 
-            "Scar-TAMs", 
-            "TAMs", 
-            "IFN-TAMs", 
-            "Inflammatory-TAMs", 
-            "Cycling", 
+            "Osteoclast-TAMs",
+            "Scar-TAMs",
+            "TAMs",
+            "IFN-TAMs",
+            "Inflammatory-TAMs",
+            "Cycling",
             "Alveolar",
             "Interstitial",
             "cMonocyte",
-            "ncMonocyte", 
+            "ncMonocyte",
             "Pre-DC",
             "DC1"))
 
@@ -364,14 +364,12 @@ if(!file.exists("misc/murine_macs_assignments.qs")) {
     r_dim_plot(macs, split.by = "tissue", group.by = "macs_assignment")
 
     macs <- run_fdl(macs)
-    r_dim_plot(macs, 
-        split.by = "tissue", 
-        reduction = "fdl", 
+    r_dim_plot(macs,
+        split.by = "tissue",
+        reduction = "fdl",
         group.by = "macs_assignment")
 
     qs::qsave(macs, "output/rdata/macs_subclustered_cleaned.qs")
-} else {
-    macs <- qs::qread("output/rdata/macs_subclustered_cleaned.qs")
 }
 
 p1 <- r_dim_plot(macs, group.by = "seurat_clusters")
@@ -398,7 +396,7 @@ mac_genes <- c(
 
 Idents(macs) <- macs$macs_assignment
 
-macs2 <- subset(macs, 
+macs2 <- subset(macs,
     macs_assignment %in% c("Interstitial", "Alveolar"),
     invert = TRUE)
 
