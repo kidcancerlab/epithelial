@@ -12,6 +12,8 @@ b6_f420_combined <- merge(sobj_list[["C57BL6"]],
     RunUMAP(dims = 1:30, seed.use = 22, verbose = FALSE) %>%
     FindNeighbors(k.param = 30, reduction = "umap", dims = 1:2, verbose = FALSE) %>%
     FindClusters(resolution  = 0.3, verbose = FALSE)
+
+qs::qsave(b6_f420_combined, "output_old/rdata/b6_f420_combined_all.qs")
 ```
 
 ### Inspect identities from SingleR calls and other meta
@@ -45,7 +47,7 @@ if(file.exists("misc/b6_f420_assignments.qs")) {
         arrange(seurat_clusters, -count) %>%
         unique() %>%
         print(n = 1000)
-    
+
     # This list is manually curated from the SingleR assignments and scores
     # If run again, this needs to be checked for accuracy, as clusters may change
     b6_f420_combined <- RenameIdents(b6_f420_combined,

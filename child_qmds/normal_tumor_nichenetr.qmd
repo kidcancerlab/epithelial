@@ -15,15 +15,27 @@ murine_aec <-
     subset(sample_name == "S0066" | sample_name == "S0068")
 murine_aec$cell_type_fine <- Idents(murine_aec)
 
-b6_f420_combined <-
-    qs::qread("output/rdata/b6_f420_combined.qs") %>%
+b6_f420_combined_all <-
+    qs::qread("output_old/rdata/b6_f420_combined_all.qs") %>%
     AddMetaData(qs::qread("misc/b6_f420_assignments.qs"))
 
-Idents(b6_f420_combined) <- "cell_type_final"
+DefaultAssay(b6_f420_combined_all) <- "RNA"
+Idents(b6_f420_combined_all) <- "cell_type_final"
+
+f420_cells <-
+    qs::qread("output/rdata/sobj_list.qs")[["F420"]] %>%
+    AddMetaData(
+        qs::qread("misc/b6_f420_assignments.qs") %>%
+            rownames_to_column("cells") %>%
+            filter(grepl("F420", cells)) %>%
+            mutate(cells = str_remove(cells, ".+_")) %>%
+            column_to_rownames("cells")
+    ) %>%
+    subset(cell_type_final == "F420")
 
 mouse_data <-
     subset(
-        b6_f420_combined,
+        b6_f420_combined_all,
         idents = c(
             "Monocyte/Macrophage",
             "Alveolar macrophage",
@@ -32,14 +44,12 @@ mouse_data <-
             "Dendritic cell"
         )
     ) %>%
-    merge(murine_aec) %>%
-    process_seurat()
+    merge(y = list(murine_aec, f420_cells)) %>%
+    process_seurat() %>%
+    JoinLayers()
 
-DefaultAssay(mouse_data) <- "RNA"
 Idents(mouse_data) <- "cell_type_final"
 mouse_data[["SCT"]] <- NULL
-
-mouse_data <- JoinLayers(mouse_data)
 
 r_dim_plot(
     mouse_data,
@@ -88,17 +98,82 @@ weighted_networks_lr <-
 ```{r f420_de}
 sobj_list <- qs::qread("output/rdata/sobj_list.qs")
 
-b6_f420_combined_t <-
-    merge(
-        sobj_list[["C57BL6"]],
-        y = sobj_list[["F420"]],
-        add.cell.ids = c("C57BL6", "F420")
+tibia_f420 <-
+    sobj_list$tibia_F420
+
+ref_path <- "/home/gdrobertslab/lab/GenRef/sc_ref_datasets/mouse"
+mouse_lung_ref <- qs::qread(paste0(ref_path, "/GSE151974/mouse_lung_ref.qs"))
+tumor_ref <- qs::qread("output/rdata/f420_reference.qs")
+mouse_immune <- celldex::ImmGenData()
+# This label is not informative
+mouse_immune <-
+    mouse_immune[mouse_immune$label.main != "Stromal cells", ]
+mouse_rna <- celldex::MouseRNAseqData()
+
+cell_assign <-
+    SingleR::SingleR(
+        as.SingleCellExperiment(tibia_f420),
+        ref = list(
+            GetAssayData(mouse_lung_ref),
+            mouse_immune,
+            mouse_rna,
+            GetAssayData(tumor_ref)
+        ),
+        labels = list(
+            mouse_lung_ref$cell_type,
+            mouse_immune$label.main,
+            mouse_rna$label.fine,
+            tumor_ref$cell_type
+        ),
+        aggr.ref = TRUE
+    )
+tibia_f420$cell_type_final <- cell_assign$labels
+tibia_f420$cell_score <- cell_assign$scores %>%
+    apply(MARGIN = 1, function(x) max(x, na.rm = TRUE))
+
+DimPlot(
+    tibia_f420,
+    group.by = c("seurat_clusters", "cell_type_final"),
+    label = TRUE,
+    repel = TRUE
+) +
+    NoLegend()
+
+tumor_clusters <-
+    table(
+        tibia_f420$cell_type_final,
+        tibia_f420$seurat_clusters
     ) %>%
+    prop.table(margin = 2) %>%
+    as.data.frame() %>%
+    filter(Var1 == "Tumor" & Freq > 0.9) %>%
+    pull(Var2)
+
+tibia_f420 <-
+    subset(tibia_f420, seurat_clusters %in% tumor_clusters)
+
+# adding in b6 here so it's easy to add cell IDs to match assignments
+b6_f420_combined_t <-
+    merge(sobj_list[["F420"]], add.cell.ids = "F420") %>%
     AddMetaData(qs::qread("misc/b6_f420_assignments.qs")) %>%
-    merge(sobj_list$tibia_F420) %>%
+    merge(
+        tibia_f420,
+        add.cell.ids = c("tibia", "")
+    ) %>%
+    JoinLayers() %>%
+    subset(cell_type_final == "F420" | cell_type_final == "Tumor") %>%
     process_seurat()
 
 Idents(b6_f420_combined_t) <- "cell_type_final"
+
+celltype_de <- list()
+celltype_de[["F420"]] <-
+    FindMarkers(
+        b6_f420_combined_t,
+        ident.1 = "F420 primary tumor in tibia",
+        group.by = "sample_description"
+    ) %>%
+    filter(p_val_adj < 0.05)
 
 plot_name <-
     DimPlot(
@@ -107,7 +182,7 @@ plot_name <-
         label = TRUE,
         repel = TRUE
     )
-ggsave("stuff_f420_cell_final.png", plot_name, width = 15, height = 10)
+ggsave("output/figures/f420_prim_met_dim.png", plot_name, width = 15, height = 10)
 
 plot_name <-
     DimPlot(
@@ -147,8 +222,8 @@ DimPlot(
 ```{r nichenetr}
 #| cache.vars: nichenet_out
 all_cell_types <- unique(mouse_data$cell_type_final)
-
-celltype_de <- list()
+#not_tumor_cells <- discard(all_cell_types, all_cell_types == "F420")
+#celltype_de <- list()
 
 set.seed(1337)
 
@@ -173,25 +248,13 @@ nichenet_out <-
                     cell_type_final == receiver_cell
                 )
 
-            min_n_cells_de <- 10
-
-            n_control_cells <-
-                subset(subset_data, sample == "C57BL6") %>%
-                ncol()
-
-            n_tumor_lung_cells <-
-                subset(subset_data, sample == "F420") %>%
-                ncol()
-
-            if (min(n_control_cells, n_tumor_lung_cells) < min_n_cells_de) {
-                return("Not enough cells")
+            if (receiver_cell != "F420") {
+                celltype_de[[receiver_cell]] <-
+                    subset(mouse_data, cell_type_final == receiver_cell) %>%
+                    FindMarkers(group.by = "sample",
+                                ident.1 = "C57BL6") %>%
+                    filter(p_val_adj < 0.05)
             }
-
-            celltype_de[[receiver_cell]] <-
-                subset(mouse_data, cell_type_final == receiver_cell) %>%
-                FindMarkers(group.by = "sample",
-                            ident.1 = "C57BL6") %>%
-                filter(p_val_adj < 0.05)
 
             celltype_de[[receiver_cell]] %>%
             rownames_to_column("gene") %>%
@@ -318,7 +381,10 @@ for (receiver_cell in all_cell_types) {
             rbind(slot_1_data, sub_nichenetr[[1]]$data)
 
         sub_nichenetr[[2]]$data <-
-            filter(sub_nichenetr[[2]]$data, features.plot %in% nint_receptors) %>%
+            filter(
+                sub_nichenetr[[2]]$data,
+                features.plot %in% nint_receptors
+            ) %>%
             mutate(id = "Receptor Expression")
 
         if (nrow(sub_nichenetr[[2]]$data) > 0) {
@@ -364,9 +430,6 @@ ggsave(
     height = 5
 )
 ```
-
-
-Do the same thing with Cabo samples?
 
 ```{r}
 ligand_receptors <-
@@ -557,8 +620,6 @@ VlnPlot(
     ncol = 1
 ) +
     theme(legend.position = "top")
-
-
 
 aucell_out <-
     AUCell::AUCell_run(GetAssayData(epi_myeloid_data), gene_lists) %>%
