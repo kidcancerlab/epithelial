@@ -31,7 +31,7 @@ f420_cells <-
             mutate(cells = str_remove(cells, ".+_")) %>%
             column_to_rownames("cells")
     ) %>%
-    subset(cell_type_final == "F420")
+    subset(cell_type_final == "F420" & seurat_clusters != "15")
 
 mouse_data <-
     subset(
@@ -96,10 +96,8 @@ weighted_networks_lr <-
 
 ## Calculate DE between primary and met F420 to get DE list to use for nichenetr
 ```{r f420_de}
-sobj_list <- qs::qread("output/rdata/sobj_list.qs")
-
 tibia_f420 <-
-    sobj_list$tibia_F420
+    qs::qread("output/rdata/sobj_list.qs")$tibia_F420
 
 ref_path <- "/home/gdrobertslab/lab/GenRef/sc_ref_datasets/mouse"
 mouse_lung_ref <- qs::qread(paste0(ref_path, "/GSE151974/mouse_lung_ref.qs"))
@@ -154,11 +152,10 @@ tibia_f420 <-
 
 # adding in b6 here so it's easy to add cell IDs to match assignments
 b6_f420_combined_t <-
-    merge(sobj_list[["F420"]], add.cell.ids = "F420") %>%
-    AddMetaData(qs::qread("misc/b6_f420_assignments.qs")) %>%
     merge(
+        f420_cells,
         tibia_f420,
-        add.cell.ids = c("tibia", "")
+        add.cell.ids = c("", "tibia")
     ) %>%
     JoinLayers() %>%
     subset(cell_type_final == "F420" | cell_type_final == "Tumor") %>%
@@ -222,8 +219,6 @@ DimPlot(
 ```{r nichenetr}
 #| cache.vars: nichenet_out
 all_cell_types <- unique(mouse_data$cell_type_final)
-#not_tumor_cells <- discard(all_cell_types, all_cell_types == "F420")
-#celltype_de <- list()
 
 set.seed(1337)
 
