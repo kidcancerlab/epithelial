@@ -240,12 +240,13 @@ all_logfc_clust <-
                     "other")
 
         output <-
-            calc_logfc(test_data,
-                        group_var = "comp",
-                        group_1 = x,
-                        group_2 = "other") %>%
-            arrange(desc(log_fc)) %>%
-            pull(log_fc, name = gene)
+            FoldChange(test_data,
+                       group.by = "comp",
+                       ident.1 = x,
+                       ident.2 = "other") %>%
+            arrange(desc(avg_log2FC)) %>%
+            rownames_to_column("gene") %>%
+            pull(avg_log2FC, name = "gene")
         return(output)
     })
 ```
