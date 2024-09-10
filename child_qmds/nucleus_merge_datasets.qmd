@@ -3,9 +3,9 @@
 I'm now going to merge and then annotate the dataset.
 
 ```{r looking-for-batch-effects}
-merged_samples <- merge(sample_list[[1]], sample_list[-1])
-
-merged_samples <- process_seurat(merged_samples)
+merged_samples <- merge(sample_list[[1]], sample_list[-1]) %>%
+    JoinLayers() %>%
+    process_seurat()
 
 DimPlot(merged_samples, group.by = "sample_id")
 ```
