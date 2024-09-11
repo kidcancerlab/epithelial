@@ -49,6 +49,7 @@ hlca/*
 output/*
 slurmOut
 input
+figure/*
 
 # Intermediate files for markdown rendering
 /.quarto/
