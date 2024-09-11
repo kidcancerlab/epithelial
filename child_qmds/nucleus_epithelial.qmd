@@ -16,7 +16,7 @@ DimPlot(epi, group.by = "sn_cell_type", split.by = "sample_id", label = TRUE, nc
 
 ```{r}
 Idents(epi) <- epi$seurat_clusters
-epi_degs <- FindAllMarkers(epi)
+epi_degs <- FindAllMarkers(JoinLayers(epi))
 write.table(epi_degs, "results/de/epi_degs.tsv")
 # get top 10 degs for each cluster
 epi_degs %>%
@@ -32,7 +32,7 @@ epi_degs %>%
 ```{r}
 Idents(epi) <- epi$sn_cell_type
 
-epi_subtype_degs <- FindAllMarkers(epi)
+epi_subtype_degs <- FindAllMarkers(JoinLayers(epi))
 write.table(epi_subtype_degs, "results/de/epi_subptype_degs.tsv")
 ```
 
@@ -45,7 +45,7 @@ These markers aren't very informative, I'm going to try comparing these datasets
 I want to re-run singler using two single-cell datasets: murine_aec and mouse_lung. The hope is that mouse_lung will correctly label these cells as lung epithelial, and then the murine_aec-based predictions will elucidate general cell type composition. However I will verify the final cell types with James. I'm going to merge `mouse_lung` and `murine_aec` for this.
 
 ```{r read-in-murine-aec}
-murine_aec <- qs::qread("/home/gdrobertslab/lab/Analysis/Ryan/epithelial/output/rdata/nucleus/murine_aec_post-filtering.qs") %>%
+murine_aec <- qs::qread("output/rdata/murine_aec_post-filtering.qs") %>%
     process_seurat()
 murine_aec@meta.data <- murine_aec@meta.data %>%
     mutate(paper_cell_type =
@@ -73,7 +73,7 @@ mouse_lung$ref_label <- mouse_lung$CellType
 merged_ref <- merge(murine_aec, mouse_lung) %>%
     process_seurat()
 
-merged_preds <- SingleR::SingleR(test = as.SingleCellExperiment(epi),
+merged_preds <- SingleR::SingleR(test = as.SingleCellExperiment(JoinLayers(epi)),
                                  ref = as.SingleCellExperiment(merged_ref),
                                  labels = merged_ref$ref_label,
                                  aggr.ref = TRUE)
@@ -131,7 +131,8 @@ small_epi <- subset(epi,
                             "Club",
                             "DATP",
                             "pAEC2")) %>%
-    process_seurat()
+    process_seurat() %>%
+    JoinLayers()
 
 table(small_epi$condensed_cts, small_epi$seurat_clusters)
 
@@ -155,6 +156,7 @@ write.table(small_epi_markers, "results/de/small_epi_markers.csv")
 I'm going to remove fibroblasts and endothelial cells before reclustering and labelling. I'm going to keep the code chunk below commented out because these assignments were made before I subsetted out the tumor cells. I'm using overlap between clusters in the new object and the old one to make my new assignments.
 
 ```{r add-manual-cell-types}
+#| eval: FALSE
 # small_epi@meta.data <- small_epi@meta.data %>%
 #     mutate(james_cell_type = recode(seurat_clusters,
 #                                     `0` = "AEC2",
@@ -221,7 +223,7 @@ small_epi@meta.data <- small_epi@meta.data %>%
                               "S0283" = "Late Nintedanib",
                               "S0284" = "Early Nintedanib"))
 
-qs::qsave(small_epi, "output/rdata/nucleus/new_small_epi.qs") 
+qs::qsave(small_epi, "output/rdata/nucleus/new_small_epi.qs")
 
 pdf("output/figures/nucleus/epithelial_split_umap.pdf", width = 12, height = 4)
 r_dim_plot(small_epi,

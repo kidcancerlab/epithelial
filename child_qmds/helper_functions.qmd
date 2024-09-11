@@ -81,6 +81,8 @@ calc_logfc <- function(sobj,
 ```
 
 # A function to make output an sortable and copy-able datatable from a dataframe
+```{r int_function}
+
 interactive_dt <- function(df, rownames = FALSE) {
     DT::datatable(data = df,
                   rownames = rownames,
@@ -97,6 +99,7 @@ interactive_dt <- function(df, rownames = FALSE) {
                   )
     )
 }
+```
 
 # Functions for recursive clustering
 ```{r recurluster-fun}

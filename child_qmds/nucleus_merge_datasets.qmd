@@ -38,12 +38,13 @@ mouse_lung_ref <-
 
 ```{r sn-singler}
 #make merged_samples a SummarizedExperiment
-merged_sumexp <- SummarizedExperiment(assays = list(logcounts = log(1 + GetAssayData(merged_samples, layer = "counts"))),
+merged_sumexp <- SummarizedExperiment(assays = list(logcounts = log(1 + GetAssayData(JoinLayers(merged_samples), layer = "counts"))),
                                       colData = merged_samples@meta.data)
 
 sn_preds <- SingleR(test = merged_sumexp,
                     ref = mouse_lung_ref,
-                    labels = mouse_lung_ref$cell_type)
+                    labels = mouse_lung_ref$cell_type,
+                    aggr.ref = TRUE)
 ```
 
 ### Add Predictions to Seurat Object
@@ -94,7 +95,7 @@ merged_samples@meta.data %>%
     group_by(sample_id, coarse_cell_type) %>%
     mutate(total = n()) %>%
     unique() %>%
-    pivot_wider(names_from = "sample_id", values_from = "total") 
+    pivot_wider(names_from = "sample_id", values_from = "total")
 ```
 
 What the cell type abbreviations are

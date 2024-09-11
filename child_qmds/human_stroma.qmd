@@ -278,7 +278,7 @@ if(!file.exists("misc/human_met_labels.qs")) {
         group_by(seurat_clusters, annotations) %>%
         tally() %>%
         arrange(seurat_clusters, -n))
-    
+
     met_label <- RenameIdents(met_label,
         `0` = "Tumor",
         `1` = "Myeloid",
@@ -369,7 +369,7 @@ r_dim_plot(lungs, split.by = "type", group.by = "cell_type", repel = TRUE)
 # ***This needs to be redone since re-building the healthy lung reference
 if(!file.exists("misc/lungs_manual_assignment.qs")) {
     r_dim_plot(lungs, split.by = "type")
-    
+
     gt::gt(lungs[[]] %>%
         select(seurat_clusters, annotations) %>%
         group_by(seurat_clusters, annotations) %>%
@@ -434,14 +434,14 @@ p1 <- r_dim_plot(lungs,
     repel = TRUE,
     label.box = TRUE)
 p2 <- r_dim_plot(subset(lungs, type == "Healthy"),
-    group.by = "ann_level_3", 
+    group.by = "ann_level_3",
     repel = TRUE,
     label.box = TRUE)
 p3 <- r_dim_plot(subset(lungs, type == "Metastasis"),
-    group.by = "met_labels", 
+    group.by = "met_labels",
     repel = TRUE)
 p4 <- r_dim_plot(lungs,
-    group.by = "manual_assignments", 
+    group.by = "manual_assignments",
     repel = TRUE,
     label.box = TRUE)
 (p1 + p2) / (p4 + p3)
@@ -450,9 +450,9 @@ p4 <- r_dim_plot(lungs,
 if(!file.exists("misc/human_mets_stroma_assignments.qs")) {
     lungs <- kill_cc(lungs)
     Idents(lungs) <- lungs$seurat_clusters
-    
+
     lungs_marks_2 <- FindAllMarkers(lungs)
-    
+
     gt::gt(lungs_marks_2 %>%
         group_by(cluster) %>%
         filter(pct.1 > 0.5) %>%
@@ -486,7 +486,7 @@ if(!file.exists("misc/human_mets_stroma_assignments.qs")) {
         `22` = "Tumor") # Cycling heavily, otherwise not matching
 
     qs::qsave(Idents(lungs), "misc/human_mets_stroma_assignments.qs")
-    lungs$manual_assignments_v2 <- Idents(lungs)    
+    lungs$manual_assignments_v2 <- Idents(lungs)
     Idents(lungs) <- lungs$seurat_clusters
 } else {
     lungs$manual_assignments_v2 <- qs::qread("misc/human_mets_stroma_assignments.qs")
@@ -519,7 +519,7 @@ if(!file.exists("output/rdata/human_epithelial.qs")) {
         RunUMAP(reduction = "harmony", dims = 1:20) %>%
         FindNeighbors(reduction = "harmony", dims = 1:20) %>%
         FindClusters(resolution = 0.3)
-    
+
     r_dim_plot(epi, split.by = "type")
 
     p1 <- r_dim_plot(subset(epi, type == "Healthy"),
@@ -662,7 +662,7 @@ DotPlot(epi2,
 # Subcluster macrophages
 
 ```{r}
-if(!file.exists(output/rdata/human_macs.qs)) {
+if(!file.exists("output/rdata/human_macs.qs")) {
     macs <- subset(lungs, subset = manual_assignments_v2 == "Myeloid")
     macs[["RNA"]]$scale.data <- NULL
 
@@ -698,7 +698,7 @@ if(!file.exists(output/rdata/human_macs.qs)) {
         gt::tab_header("DEGs in human macrophages (by cluster)")
 
     # Remove contaminating cells
-    macs <- subset(macs, 
+    macs <- subset(macs,
         idents = c(
             "6", # T cells
             "8", # Lymphocytes
@@ -754,7 +754,7 @@ if(!file.exists(output/rdata/human_macs.qs)) {
         gt::tab_header("DEGs in human mononuclear cells (by cluster)")
 
     # Remove contaminating carryover
-    macs <- subset(macs, 
+    macs <- subset(macs,
         idents = c("2", "8", "14", "16"),
         invert = TRUE)
 
@@ -772,7 +772,7 @@ if(!file.exists(output/rdata/human_macs.qs)) {
     r_dim_plot(macs, split.by = "type", repel = TRUE)
     r_dim_plot(macs, split.by = "type", reduction = "fdl", repel = TRUE, label.box = TRUE)
 
-    macs <- subset(macs, 
+    macs <- subset(macs,
         idents = c("14"), # Doublets
         invert = TRUE)
 
@@ -833,18 +833,18 @@ if(!file.exists("misc/human_macs_assignments.qs")) {
         "14" = "DC1")
 
     r_dim_plot(macs, split.by = "type")
-  
+
     # Fix the monocytes - find the appropriate subclusters
     macs <- FindSubCluster(macs,
         "Monocyte",
         subcluster.name = "monos_subcluster",
         graph.name = "RNA_snn",
         resolution = 0.4)
-    
+
     Idents(macs) <- macs$monos_subcluster
-    
+
     r_dim_plot(macs, split.by = "type")
-    
+
     monos_marks <- subset(macs2, macs_assignment == "Monocyte") %>%
         FindAllMarkers()
 
@@ -854,7 +854,7 @@ if(!file.exists("misc/human_macs_assignments.qs")) {
         slice_max(avg_log2FC, n = 30) %>%
         arrange(cluster, -avg_log2FC)) %>%
         gt::tab_header("DEGs in human mononuclear cells (by cluster)")
-    
+
     macs <- RenameIdents(macs,
         "Monocyte_0" = "Inflammatory-TAMs",
         "Monocyte_1" = "ncMonocyte",
