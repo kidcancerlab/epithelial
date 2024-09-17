@@ -39,7 +39,7 @@ DotPlot(myeloid,
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
     coord_fixed()
 
-myeloid2 <- RenameIdents(myeloid,
+myeloid <- RenameIdents(myeloid,
     "0" = "TAM",
     "1" = "TAM",
     "2" = "Alveolar",
@@ -54,15 +54,9 @@ myeloid2 <- RenameIdents(myeloid,
     "11" = "Scar",
     "12" = "IFN")
 
-r_dim_plot(myeloid2, split.by = "treatment")
+r_dim_plot(myeloid, split.by = "treatment")
 
-qs::qsave(myeloid, "output/rdata/nucleus/myeloid_processed.qs")
-```
-
-### Plot Markers for Each Cluster
-
-```{r myeloid-cluster-markers}
-myeloid2$macs_assignment <- Idents(myeloid2) %>%
+myeloid$macs_assignment <- Idents(myeloid) %>%
     factor(levels = c(
         "Osteoclast",
         "Scar",
@@ -77,7 +71,15 @@ myeloid2$macs_assignment <- Idents(myeloid2) %>%
         "Pre-DC",
         "DC1"))
 
-DotPlot(myeloid2,
+qs::qsave(myeloid, "output/rdata/nucleus/myeloid_processed.qs")
+```
+
+### Plot Markers for Each Cluster
+
+```{r myeloid-cluster-markers}
+
+
+DotPlot(myeloid,
     features = mac_genes,
     group.by = "macs_assignment",
     cols = "RdBu",

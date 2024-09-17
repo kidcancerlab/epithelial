@@ -2,8 +2,8 @@
 
 ```{r sample-info}
 sample_info <- tribble(~sample_id,          ~treatment, ~species,
-                          "S0283", "nintedanib_day_28",  "mouse",
-                          "S0284",  "nintedanib_day_1",  "mouse",
+                          "S0283", "Late Nintedanib",  "mouse",
+                          "S0284",  "Early Nintedanib",  "mouse",
                           "S0291",       "new control",  "mouse")
 sample_info <- column_to_rownames(sample_info, "sample_id")
 
@@ -60,14 +60,14 @@ cutoff_table <-
 plts_w_cutoffs <- list()
 for (id in names(sample_list)) {
     tmp_cuts <- cutoff_table[id, ]
-    
+
     #add plot to list
     plts_w_cutoffs[[id]] <- feature_hist(sample_list[[id]],
                                          features = "nCount_RNA",
                                          cutoff_table = tmp_cuts)
 
     #subset object
-    sample_list[[id]] <- 
+    sample_list[[id]] <-
         subset(sample_list[[id]],
                nCount_RNA %in% c(tmp_cuts$min_val:tmp_cuts$max_val)) %>%
         process_seurat()

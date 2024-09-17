@@ -8,7 +8,7 @@ I need to add the cell types from `small_epi` as well.
 
 ```{r}
 merged_samples$james_cell_type <- merged_samples$coarse_cell_type
-merged_samples@meta.data[colnames(myeloid),]$james_cell_type <- myeloid$james_cell_type
+merged_samples@meta.data[colnames(myeloid),]$james_cell_type <- myeloid$macs_assignment
 
 
 #now add in annotations from small_epi

@@ -1,6 +1,6 @@
 ## Read in required data for normal/tumor nichenetr analysis
 ```{r normal_tumor_read}
-#| cache.vars: mouse_data
+#| cache.vars: [mouse_data, f420_cells]
 murine_aec <-
     qs::qread("output/rdata/murine_aec_post-filtering.qs") %>%
     RenameIdents(
@@ -61,7 +61,6 @@ r_dim_plot(
 
 ## Prep nichenetr reference data
 ```{r prep_nichenetr}
-#| cache.vars: c("lr_network", "ligand_target_matrix", "weighted_networks_lr")
 rrrSingleCellUtils:::load_lig_receptor_data()
 lr_network <-
     rrrSingleCellUtils:::rrr_env$lr_network_strict %>%
@@ -207,17 +206,10 @@ DimPlot(
     repel = TRUE
 ) +
     NoLegend()
-
-Idents(b6_f420_combined_t) <- "cell_type"
-DimPlot(
-    b6_f420_combined_t,
-    cells.highlight = WhichCells(b6_f420_combined_t, idents = "F420"),
-    split.by = "sample_name"
-)
 ```
 
 ```{r nichenetr}
-#| cache.vars: nichenet_out
+#| cache.vars: [nichenet_out, all_cell_types]
 all_cell_types <- unique(mouse_data$cell_type_final)
 
 set.seed(1337)
@@ -289,7 +281,7 @@ qs::qsave(nichenet_out, "output/rdata/nichenetr_out.qs")
 ```
 
 ## Make complex heatmaps from nichenetr output
-```{r}
+```{r all_complexheatmaps}
 for (receiver_cell in all_cell_types) {
     if (is.list(nichenet_out[[receiver_cell]])) {
         plot_name <-
@@ -340,6 +332,7 @@ nint_receptors <-
         "Lyn"
     )
 
+rrrSingleCellUtils:::load_lig_receptor_data()
 nint_ligands <-
     rrrSingleCellUtils:::rrr_env$lr_network_strict %>%
     mutate(from = nichenetr::convert_human_to_mouse_symbols(from),
@@ -426,7 +419,7 @@ ggsave(
 )
 ```
 
-```{r}
+```{r make_nichenetr_gene_lists}
 ligand_receptors <-
     rrrSingleCellUtils:::rrr_env$lr_network_strict %>%
     mutate(from = nichenetr::convert_human_to_mouse_symbols(from),
@@ -531,7 +524,6 @@ FeaturePlot(
 ```{r gather_nuc_data}
 james_tams <- qs::qread("output/rdata/nucleus/myeloid_processed.qs")
 james_tams$coarse_cell_type <- "TAM"
-james_tams$coarse_cell_type[james_tams$james_cell_type == "Interstitial"] <- "IM"
 
 james_epi <- qs::qread("output/rdata/nucleus/new_small_epi.qs")
 
@@ -565,6 +557,7 @@ epi_myeloid_data <-
         james_tams,
         list(james_epi, non_james_cells)
     ) %>%
+    JoinLayers() %>%
     process_seurat() %>%
     AddModuleScore(
         features = gene_lists,
@@ -684,12 +677,10 @@ qs::qsave(
     plot_name,
     "output/figures/nichenetr/epi_myeloid_treatment_aucell_vln_main.qs"
 )
-
-FeaturePlot(epi_myeloid_data, features = c("Fgf1_downstream", "Vegfa_downstream"))
 ```
 
 ## Try doing statistical analysis on the AUCell data
-```{r}
+```{r aucell_stats}
 output <- data.frame(cell_type = character())
 min_cells <- 20
 
@@ -704,13 +695,6 @@ for (downstream_targets in names(gene_lists)) {
                 mc.preschedule = FALSE,
                 function(cell_type) {
                 message(cell_type)
-                sub_data <-
-                    subset(
-                        epi_myeloid_data,
-                        coarse_cell_type == cell_type &
-                            treatment %in% c("Control", second_group),
-                        seed = sample(1:1000000)
-                    )
 
                 stuff <-
                     data.frame(
@@ -720,7 +704,27 @@ for (downstream_targets in names(gene_lists)) {
                         group_2 = second_group
                     )
 
-                if (min(table(sub_data$treatment)) > min_cells) {
+                fewest_cells <-
+                    min(
+                        sum(
+                            epi_myeloid_data$coarse_cell_type == cell_type &
+                                epi_myeloid_data$treatment == "Control"
+                        ),
+                        sum(
+                            epi_myeloid_data$coarse_cell_type == cell_type &
+                                epi_myeloid_data$treatment == second_group
+                        )
+                    )
+
+                if (fewest_cells > min_cells) {
+                    sub_data <-
+                        subset(
+                            epi_myeloid_data,
+                            coarse_cell_type == cell_type &
+                                treatment %in% c("Control", second_group),
+                            seed = sample(1:1000000)
+                        )
+
                     stuff$p_val <-
                         t.test(
                             get(downstream_targets) ~ treatment,
@@ -771,7 +775,7 @@ for (downstream_targets in names(gene_lists)) {
     }
 }
 
-output$fdr_value <- qvalue::qvalue(output$p_val)$qvalue
+output$fdr_value <- p.adjust(output$p_val, method = "BH")
 
 # FDR correction
 
