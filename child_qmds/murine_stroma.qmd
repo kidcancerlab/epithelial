@@ -145,12 +145,5 @@ r_dim_plot(murine_aec, group.by = "sample", shuffle = TRUE)
 r_dim_plot(murine_aec, group.by = "type", shuffle = TRUE)
 r_dim_plot(murine_aec, group.by = "cell_type", repel = TRUE)
 
-
-
-
-# balbc_k7m2_combined.AEC_1$celltype_sample <-
-#     paste(Idents(balbc_k7m2_combined.AEC_1),
-#           balbc_k7m2_combined.AEC_1$sample,
-#           sep = "_")
-# balbc_k7m2_combined.AEC_1$celltype <- Idents(balbc_k7m2_combined.AEC_1)
+qs::qsave(murine_aec, "output/rdata/final_murine_aecs.qs")
 ```
